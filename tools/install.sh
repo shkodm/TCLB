@@ -116,7 +116,7 @@ rdep)
 	normal_install numbers
 	github_install llaniewski/rtemplate
 	github_install llaniewski/gvector
-	github_install llaniewski/polyAlgebra
+	github_install shkodm/polyAlgebra
 	;;
 rpython)
 	normal_install rjson
