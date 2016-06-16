@@ -114,7 +114,7 @@ r)
 rdep)
 	normal_install optparse
 	normal_install numbers
-	normal_install Rcpp
+	normal_install Rcpp # testing new package. this is just sad, that Travis does not have automatic testing of updated dependecies.. 
 	github_install llaniewski/rtemplate
 	github_install llaniewski/gvector
 	github_install shkodm/polyAlgebra
