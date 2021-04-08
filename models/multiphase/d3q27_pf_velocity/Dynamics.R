@@ -58,7 +58,31 @@ AddDensity(name="nw_x", dx=0, dy=0, dz=0, group="nw")
 AddDensity(name="nw_y", dx=0, dy=0, dz=0, group="nw")
 AddDensity(name="nw_z", dx=0, dy=0, dz=0, group="nw")
 
-AddField("PhaseF",stencil3d=1, group="PF")
+
+AddDensity(name="der_tangent_1_wall", dx=0, dy=0, dz=0)
+AddDensity(name="der_tangent_2_wall", dx=0, dy=0, dz=0)
+
+# Debugging
+AddDensity(name="perpVal", dx=0, dy=0, dz=0)
+AddField("gradPhiVal_x", stencil3d=2, group="gradPhi")
+AddField("gradPhiVal_y", stencil3d=2, group="gradPhi")
+AddField("gradPhiVal_z", stencil3d=2, group="gradPhi")
+AddField("IsBoundary", stencil3d=1, group="debug_boundary")
+
+AddDensity(name="TangentWallVector1_x", dx=0, dy=0, dz=0)
+AddDensity(name="TangentWallVector2_x", dx=0, dy=0, dz=0)
+AddDensity(name="TangentWallVector1_y", dx=0, dy=0, dz=0)
+AddDensity(name="TangentWallVector2_y", dx=0, dy=0, dz=0)
+AddDensity(name="TangentWallVector1_z", dx=0, dy=0, dz=0)
+AddDensity(name="TangentWallVector2_z", dx=0, dy=0, dz=0)
+
+if (Options$WETBC1) {
+	AddField("PhaseF",stencil3d=1, group="PF")
+} else {
+	AddField("PhaseF",stencil3d=3, group="PF")
+}
+
+AddDensity(name="n_k", dx=0, dy=0, dz=0, group="nw")
 
 if (Options$OutFlow){
 	for (d in rows(DensityAll)) {
@@ -161,8 +185,11 @@ if (Options$thermo){
 }
 
 # Stages - processes to run for initialisation and each iteration
-AddStage("WallInit"  , "Init_wallNorm", save=Fields$group=="nw")
-AddStage("calcWall"  , "calcWallPhase", save=Fields$name=="PhaseF", load=DensityAll$group=="nw")
+AddStage("WallInit"  , "Init_wallNorm", save=Fields$group %in% c("nw", "debug_boundary"))
+AddStage("calcWall"  , "calcWallPhase", save=Fields$name %in% c("PhaseF", "der_tangent_1_wall", "der_tangent_2_wall",
+																"TangentWallVector1_x", "TangentWallVector2_x", "TangentWallVector1_y", "TangentWallVector2_y", "TangentWallVector1_z", "TangentWallVector2_z", "perpVal"), load=DensityAll$group %in% c("nw", "gradPhi", "PF"))
+
+AddStage('calcPhaseGrad', "calcPhaseGrad", load=DensityAll$group %in% c("g","h","Vel","nw", "PF"), save=Fields$group=="gradPhi")
 
 if (Options$OutFlow){
 	AddStage("PhaseInit" , "Init", save=Fields$name=="PhaseF")
@@ -187,11 +214,11 @@ if (Options$OutFlow){
 	                                	 load=DensityAll$group %in% c("g","h","Vel","nw"))
 }
 if (Options$thermo){
-	AddAction("Iteration", c("BaseIter", "calcPhase", "calcWall","RK_1", "RK_2", "RK_3", "RK_4"))
-	AddAction("Init"     , c("PhaseInit","WallInit" , "calcWall","BaseInit"))
+	AddAction("Iteration", c("BaseIter", "calcPhase", "calcPhaseGrad", "calcWall","RK_1", "RK_2", "RK_3", "RK_4"))
+	AddAction("Init"     , c("PhaseInit","WallInit" , "calcPhaseGrad", "calcWall","BaseInit"))
 } else {
-	AddAction("Iteration", c("BaseIter", "calcPhase", "calcWall"))
-	AddAction("Init"     , c("PhaseInit","WallInit" , "calcWall","BaseInit"))
+	AddAction("Iteration", c("BaseIter", "calcPhase", "calcPhaseGrad", "calcWall"))
+	AddAction("Init"     , c("PhaseInit","WallInit" , "calcPhaseGrad", "calcWall","BaseInit"))
 }
 
 # 	Outputs:
@@ -200,6 +227,15 @@ AddQuantity(name="PhaseField",unit="1")
 AddQuantity(name="U",	  unit="m/s",vector=T)
 AddQuantity(name="P",	  unit="Pa")
 AddQuantity(name="Normal", unit=1, vector=T)
+AddQuantity(name="TangentWallVector1", unit=1, vector=T)
+AddQuantity(name="TangentWallVector2", unit=1, vector=T)
+AddQuantity(name="Tangent1Wall", unit="1")
+AddQuantity(name="Tangent2Wall", unit="1")
+AddQuantity(name="GradPhi", unit=1, vector=T)
+AddQuantity(name="PerpVal", unit="1")
+AddQuantity(name="IsItBoundary", unit="1")
+
+
 #	Inputs: For phasefield evolution
 AddSetting(name="Density_h", comment='High density')
 AddSetting(name="Density_l", comment='Low  density')
@@ -210,6 +246,9 @@ AddSetting(name="IntWidth", default=4,    comment='Anti-diffusivity coeff')
 AddSetting(name="omega_phi", comment='one over relaxation time (phase field)')
 AddSetting(name="M", omega_phi='1.0/(3*M+0.5)', default=0.02, comment='Mobility')
 AddSetting(name="sigma", 		   comment='surface tension')
+AddSetting(name="Washburn_start", default="0", comment='Start of washburn gas phase')
+AddSetting(name="Washburn_end", default="0", comment='End of washburn gas phase')
+AddSetting(name="Washburn_width", default="0", comment='Width of washburn interface')
 
 AddSetting(name="ContactAngle", radAngle='ContactAngle*3.1415926535897/180', default='90', comment='Contact angle in degrees')
 AddSetting(name='radAngle', comment='Conversion to rads for calcs')
