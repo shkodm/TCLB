@@ -536,7 +536,7 @@ Fields$tangent_name = add.to.var.name(Fields$name,"d")
 
 Fields$area = (Fields$maxx-Fields$minx+1)*(Fields$maxy-Fields$miny+1)*(Fields$maxz-Fields$minz+1)
 Fields$simple_access = (Fields$area == 1)
-Fields$big = Fields$area > 27
+Fields$big = FALSE
 
 if (ADJOINT==1) {
 

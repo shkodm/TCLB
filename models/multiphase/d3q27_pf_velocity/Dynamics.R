@@ -140,6 +140,8 @@ AddStage("BaseIter" , "Run", save=Fields$group %in% save_iteration, load=Density
 	AddQuantity(name="Pstar", unit="1")
 	AddQuantity(name="Normal", unit=1, vector=T)
     AddQuantity(name="IsItBoundary", unit="1")
+    AddQuantity(name="GradPhi2", unit="1", vector=T)
+    AddQuantity(name="IsItDangerousCell", unit="1")
 if (Options$altContactAngle){
     AddQuantity(name="GradPhi", unit=1, vector=T)
 }

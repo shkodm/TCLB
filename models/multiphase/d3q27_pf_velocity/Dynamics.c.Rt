@@ -490,7 +490,7 @@ CudaDeviceFunction real_t getRho(){
 	if ( IamWall || IamSolid) {
 		return 0.0;
 	} else {
-		return Density_l + (Density_h-Density_l) * (PhaseF(0,0) - PhaseField_l)/(PhaseField_h - PhaseField_l);
+		return Density_l + (Density_h-Density_l) * (PhaseF(0,0,0) - PhaseField_l)/(PhaseField_h - PhaseField_l);
 	}
 }
 CudaDeviceFunction real_t getPhaseField(){
@@ -518,6 +518,43 @@ CudaDeviceFunction vector_t getNormal(){
 	vector_t n = {nw_x, nw_y, nw_z};
 	return n;
 }
+
+
+CudaDeviceFunction real_t getIsItDangerousCell(){
+	if (IamWall || IamSolid) {
+		if (nw_x == 0 && nw_y == 0 && nw_z == 0) {
+			for (int x = -1; x <= 1; x++) {
+				for (int y = -1; y <= 1; y++) {
+					for (int z = -1; z <= 1; z++) {
+						// If any of the neighbors are fluid, but the normals are zero
+						// its values will be set as an edge cases, but then it will be used
+						// during the gradient calculation
+						if (!IsBoundary_dyn(x,y,z)) {
+							return 1.0;
+						}
+					}
+				}
+			}
+		}
+		if (PhaseF > 5) {
+			for (int x = -1; x <= 1; x++) {
+				for (int y = -1; y <= 1; y++) {
+					for (int z = -1; z <= 1; z++) {
+						// If any of the neighbors are fluid, but the normals are zero
+						// its values will be set as an edge cases, but then it will be used
+						// during the gradient calculation
+						if (!IsBoundary_dyn(x,y,z)) {
+							return 2.0;
+						}
+					}
+				}
+			}
+		}
+	}
+	return 0.0;
+}
+
+
 
 //######HELPER FUNCTIONS#######//
 CudaDeviceFunction vector_t calcGradPhi(){
@@ -551,6 +588,13 @@ CudaDeviceFunction vector_t calcGradPhi(){
 	return gradPhi;
 }
 
+
+CudaDeviceFunction vector_t getGradPhi2() {
+	vector_t gradPhi = calcGradPhi();
+	return gradPhi;
+}
+
+
 CudaDeviceFunction void calcPhaseF(){
 	updateBoundary();
 	PhaseF = <?R C(sum(h))?>;
@@ -558,6 +602,25 @@ CudaDeviceFunction void calcPhaseF(){
 
 CudaDeviceFunction void calcWallPhase(){
 	PhaseF = PhaseF(0,0,0); //For fluid nodes.
+
+
+	// NOTE: Quick debugging trick to figure out on which cells pressure becomes quite negative
+	// suddently
+#if 0
+	real_t pressure_in_cell = getP();
+	real_t strange_p_upper_bound = -3e-10;
+	real_t strange_p_lower_bound = -2e-5;
+
+	if (pressure_in_cell < strange_p_upper_bound && pressure_in_cell > strange_p_lower_bound) {
+		if ( X <  constContainer.nx * 0.8 && X > constContainer.nx * 0.2) {
+			printf("Iteration %d:  Got negative pressure in cell %d %d pressure is %lf\n", constContainer.iter, X, Y, pressure_in_cell);
+		}
+	}
+#endif 
+
+
+
+
 	if ( IamWall || IamSolid ) {
 		real_t a, h, pf_f;
 
@@ -569,10 +632,44 @@ CudaDeviceFunction void calcWallPhase(){
 			// If I am a wall/solid node and I am surrounded by solid nodes
 			// or my normal points towards a solid node.
 			PhaseF = 1;
+
+			// if has some normal directions, but they point towards
+			// another boundary node
+#if 0 
+			if (!(h < 0.001) && pf_f < -100) {
+
+				for (int x = -1; x <= 1; x++) {
+					for (int y = -1; y <= 1; y++) {
+						for (int z = -1; z <= 1; z++) {
+							if (!IsBoundary_dyn(x,y,z)) {
+								 printf("I point towards another solid node, but am close to fluid nodes, at %lf %lf %lf", X, Y, Z);
+								}
+							}
+						}
+				}
+			}
+			if (h < 0.001) {
+				for (int x = -1; x <= 1; x++) {
+					for (int y = -1; y <= 1; y++) {
+						for (int z = -1; z <= 1; z++) {
+							if (!IsBoundary_dyn(x,y,z)) {
+								printf("Closed-off node is close to the fluid nodes at %lf %lf %lf\n", X, Y, Z);
+							}
+						}
+					}
+				}
+			}
+#endif
+
 		} else if (fabs(radAngle - PI/2.0) < 1e-4){
 			// If I am not surrounded, but contact angle is pi/2 (90d)
 			PhaseF = pf_f;
 		} else {
+
+
+		if (IsBoundary_dyn(nw_x, nw_y, nw_z)) {
+			printf("Ooops! Trying to get the value from the boundary. I am at %lf %lf %lf. PhaseF to take is %lf\n", X, Y, Z, pf_f);
+		}
 
 #ifndef OPTIONS_altTangDir
 #ifdef OPTIONS_staircaseimp
@@ -1062,6 +1159,74 @@ CudaDeviceFunction void Init_wallNorm(){
 			//	nw_actual_x = 0.0;nw_actual_y = 0.0;nw_actual_z = 0.0;
 				n_k = 0;
 			} else {
+				/* Beginning testing  */
+				nw_x = d3q27_ex[maxi];
+				nw_y = d3q27_ey[maxi];
+				nw_z = d3q27_ez[maxi];
+
+				if (IsBoundary_dyn(nw_x, nw_y, nw_z)) {
+
+
+                    //printf("Detected solid normal pointing to anothe boundary node. This should be aborted !!\n");
+
+					// code to actually gather the list of strange normal points and used in R-generated code, uncomment only for generation and comment out part below
+
+					printf("Will point to the other boundary node with %lf %lf %lf rounded to %lf %lf %lf and coordinates %lf %lf %lf\n", myNorm[0], myNorm[1], myNorm[2], nw_x, nw_y, nw_z, X, Y, Z);
+
+					#if 1
+#if 0
+					printf("Will point to the other boundary node with %lf %lf %lf rounded to %lf %lf %lf and coordinates %lf %lf %lf\n", myNorm[0], myNorm[1], myNorm[2], nw_x, nw_y, nw_z, X, Y, Z);
+#endif
+					#else
+
+
+					<?R
+					strange_normal_points = list(c(20.500000,  250.500000, 39.500000),
+											c(22.500000,  114.500000, 39.500000),
+											c(45.500000,  129.500000, 37.500000),
+											c(60.500000,  41.500000, 38.500000),
+											c(104.500000, 201.500000, 35.500000),
+											c(108.500000, 107.500000, 37.500000),
+											c(115.500000, 251.500000, 37.500000),
+											c(102.500000, 129.500000, 38.500000),
+											c(107.500000, 145.500000, 38.500000),
+											c(102.500000, 121.500000, 38.500000),
+											c(111.500000, 23.500000, 39.500000),
+											c(119.500000, 178.500000, 41.500000),
+											c(159.500000, 23.500000, 37.500000),
+											c(131.500000, 149.500000, 39.500000),
+											c(160.500000, 235.500000, 38.500000),
+											c(211.500000, 212.500000, 27.500000),
+											c(196.500000, 248.500000, 35.500000),
+											c(204.500000, 107.500000, 40.500000),
+											c(243.500000, 148.500000, 38.500000),
+											c(235.500000, 216.500000, 39.500000))
+
+						  counter = 0
+						  for (strange_normal_point in strange_normal_points) {
+							x = strange_normal_point[1]
+							y = strange_normal_point[2]
+							z = strange_normal_point[3]
+							counter = counter + 1
+							?>
+
+							if (X == <?%f x ?>  && Y == <?%f y ?> && Z == <?%f z ?>) {
+								printf("<?%s counter ?>:0 (%lf, %lf, %lf), (%lf, %lf, %lf), (%lf, %lf, %lf)\n", myNorm[0], myNorm[1], myNorm[2], nw_x, nw_y, nw_z, X, Y, Z);
+								for (int i = 0; i < 27; i++) {
+									int dir_x = d3q27_ex[i];
+									int dir_y = d3q27_ey[i];
+									int dir_z = d3q27_ez[i];
+
+									// node in that direction is solid
+									printf("<?%s counter ?>:%d (%d, %d, %d, %d)\n", i, dir_x, dir_y, dir_z, solidFlag[i]);
+								}
+							}
+
+							<?R } ?>
+					#endif
+
+				}
+
 				nw_x = d3q27_ex[maxi];nw_y = d3q27_ey[maxi];nw_z = d3q27_ez[maxi];
 				//nw_actual_x = d3q27_ex[maxi];nw_actual_y = d3q27_ey[maxi];nw_actual_z = d3q27_ez[maxi];
 				n_k = maxi;
@@ -1428,6 +1593,32 @@ CudaDeviceFunction void calc_Fs(real_t *fx, real_t *fy, real_t *fz, real_t mu, v
 
 #ifndef OPTIONS_BGK
 CudaDeviceFunction void CollisionMRT(){
+
+
+
+
+// debugging
+#if 0 
+	real_t velocity_in_cell = sqrt(U*U + V*V + W*W);
+
+	// check the value of pressure for the node with
+	// coords  159.500000 24.500000 36.500000
+	if (X == 159.5 && Y == 24.5 && Z == 36.5) {
+		printf("Iteration %d: Velocity in cell %lf %lf %lf velocity is %lf\n", constContainer.iter, X,
+			   Y, Z, velocity_in_cell);
+	}
+
+
+	if (velocity_in_cell > 1e-5) {
+		if ( X <  double(constContainer.nx) * 0.8 && X > double(constContainer.nx) * 0.2) {
+			printf("Iteration %d:  Got non-zero velocity in cell %lf %lf %lf velocity is %lf\n", constContainer.iter, X,
+Y, Z, velocity_in_cell);
+		}
+	}
+
+#endif
+
+
 	PhaseF = PhaseF(0,0,0);
 	int i, j;
 	real_t C  = PhaseF;
