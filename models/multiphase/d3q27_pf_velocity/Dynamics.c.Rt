@@ -229,6 +229,10 @@ CudaDeviceFunction real_t getIsItBoundary() {
 	return IsBoundary(0, 0, 0);
 }
 
+CudaDeviceFunction real_t getSpecialBoundaryPoint() {
+	return IsSpecialBoundaryPoint;
+}
+
 
 #ifdef OPTIONS_staircaseimp
 
@@ -600,6 +604,20 @@ CudaDeviceFunction void calcPhaseF(){
 	PhaseF = <?R C(sum(h))?>;
 }
 
+
+CudaDeviceFunction void calcWallPhase_correction() {
+	PhaseF = PhaseF(0,0,0);
+
+	if (IsSpecialBoundaryPoint) {
+		// take the phase field calculated already from the node in front.
+		// Might as well calculate using the neighbors, e.g. averaging
+		// NOTE: This handles only the basic case
+		//printf("Correcting the phase field values at the special point\n");
+		PhaseF = PhaseF_dyn(nw_x, nw_y, nw_z);
+	}
+}
+
+
 CudaDeviceFunction void calcWallPhase(){
 	PhaseF = PhaseF(0,0,0); //For fluid nodes.
 
@@ -628,13 +646,14 @@ CudaDeviceFunction void calcWallPhase(){
 		h = 0.5 * sqrt(nw_x*nw_x + nw_y*nw_y + nw_z*nw_z);
 
 
-		if (h < 0.001 || pf_f < -100) {
+		if (h < 0.001) {
 			// If I am a wall/solid node and I am surrounded by solid nodes
 			// or my normal points towards a solid node.
 			PhaseF = 1;
 
 			// if has some normal directions, but they point towards
 			// another boundary node
+/*
 #if 0 
 			if (!(h < 0.001) && pf_f < -100) {
 
@@ -660,7 +679,12 @@ CudaDeviceFunction void calcWallPhase(){
 				}
 			}
 #endif
-
+*/
+		} else if (IsSpecialBoundaryPoint) {
+			// printf("This is a special boundary point\n");
+			// Pass. Dont' calculate anything, just set it to some huge number, purely to make sure
+			// that the value is corrected in calcWall_correction, and otherwise the error would be visible
+			PhaseF = 2342;
 		} else if (fabs(radAngle - PI/2.0) < 1e-4){
 			// If I am not surrounded, but contact angle is pi/2 (90d)
 			PhaseF = pf_f;
@@ -1096,6 +1120,7 @@ CudaDeviceFunction void Init_wallNorm(){
 	PhaseF = PhaseF(0,0,0);
     IsBoundary = IsBoundary(0,0,0);
 	IsBoundary = 0.0;
+	IsSpecialBoundaryPoint = 0.0;
 #ifdef OPTIONS_staircaseimp
 	n_k = 0.0;
 	coeff_v1 = 0;
@@ -1164,14 +1189,16 @@ CudaDeviceFunction void Init_wallNorm(){
 				nw_y = d3q27_ey[maxi];
 				nw_z = d3q27_ez[maxi];
 
-				if (IsBoundary_dyn(nw_x, nw_y, nw_z)) {
+				// NOTE: Can't use IsBoundary here, because it is not yet set for some nodes
+				if (PhaseF_dyn(nw_x, nw_y, nw_z) < -100) {
 
-
+					// save it for later treatment
+					IsSpecialBoundaryPoint = 1.0;
                     //printf("Detected solid normal pointing to anothe boundary node. This should be aborted !!\n");
 
 					// code to actually gather the list of strange normal points and used in R-generated code, uncomment only for generation and comment out part below
 
-					printf("Will point to the other boundary node with %lf %lf %lf rounded to %lf %lf %lf and coordinates %lf %lf %lf\n", myNorm[0], myNorm[1], myNorm[2], nw_x, nw_y, nw_z, X, Y, Z);
+//					printf("Will point to the other boundary node with %lf %lf %lf rounded to %lf %lf %lf and coordinates %lf %lf %lf\n", myNorm[0], myNorm[1], myNorm[2], nw_x, nw_y, nw_z, X, Y, Z);
 
 					#if 1
 #if 0

@@ -52,6 +52,9 @@ AddDensity(name="triangle_index", dx=0, dy=0, dz=0, group="st_interpolation")
 # TODO: Only need for staircaseimp / altContactAngle, optimize before finalizing
 # the model
 AddField("IsBoundary", stencil3d=1, group="solid_boundary")
+# TODO: Should be probably saved in another boundary group, should be fixed later
+AddDensity("IsSpecialBoundaryPoint", dx=0, dy=0, dz=0, group="solid_boundary")
+AddQuantity("SpecialBoundaryPoint", unit = 1)
 
 save_initial_PF = c("PF","Vel")
 save_initial    = c("g","h","PF")
@@ -91,6 +94,7 @@ if (Options$altContactAngle){
     AddField("PhaseF",stencil3d=1, group="PF")
     AddStage("WallInit" , "Init_wallNorm", save=Fields$group %in% c("nw", "st_interpolation", "solid_boundary", "nw_actual"))
     AddStage("calcWall" , "calcWallPhase", save=Fields$name=="PhaseF", load=DensityAll$group %in% c("nw", "st_interpolation", "solid_boundary", "nw_actual"))
+    AddStage("calcWall_correction", "calcWallPhase_correction", save=Fields$name=="PhaseF", load=DensityAll$group %in% c("nw", "st_interpolation", "solid_boundary", "nw_actual"))
 }
 
 AddStage(name="InitFromFieldsStage", load.densities=TRUE, save.fields=TRUE)
@@ -126,9 +130,9 @@ AddStage("BaseIter" , "Run", save=Fields$group %in% save_iteration, load=Density
 	    AddAction("Init"     , c("PhaseInit","WallInit_CA" , "calcPhaseGrad_init"  , "calcWall_CA","BaseInit"))
 	    AddAction("InitFields"     , c("InitFromFieldsStage","WallInit_CA" , "calcPhaseGrad_init", "calcWall_CA","BaseInit"))
     } else {
-		AddAction("Iteration", c("BaseIter", "calcPhase", "calcWall"))
-		AddAction("Init"     , c("PhaseInit","WallInit" , "calcWall","BaseInit"))
-		AddAction("InitFields", c("InitFromFieldsStage","WallInit" , "calcWall","BaseInit"))
+		AddAction("Iteration", c("BaseIter", "calcPhase", "calcWall", "calcWall_correction"))
+		AddAction("Init"     , c("PhaseInit","WallInit" , "calcWall","BaseInit", "calcWall_correction"))
+		AddAction("InitFields", c("InitFromFieldsStage","WallInit" , "calcWall", "calcWall_correction", "BaseInit"))
 	}
 #######################
 ########OUTPUTS########
