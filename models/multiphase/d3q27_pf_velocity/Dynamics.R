@@ -51,7 +51,12 @@ AddDensity(name="triangle_index", dx=0, dy=0, dz=0, group="st_interpolation")
 
 # TODO: Only need for staircaseimp / altContactAngle, optimize before finalizing
 # the model
-AddField("IsBoundary", stencil3d=1, group="solid_boundary")
+if (Options$altContactAngle){
+    AddField("IsBoundary", stencil3d=2, group="solid_boundary")
+} else {
+    AddField("IsBoundary", stencil3d=1, group="solid_boundary")
+}
+
 # TODO: Should be probably saved in another boundary group, should be fixed later
 AddDensity("IsSpecialBoundaryPoint", dx=0, dy=0, dz=0, group="solid_boundary")
 AddQuantity("SpecialBoundaryPoint", unit = 1)
@@ -152,9 +157,6 @@ if (Options$altContactAngle){
 if (Options$staircaseimp) {
     # Staircase approximation
     AddQuantity(name="CoeffV", unit=1, vector=T)
-    AddQuantity(name="Triangle_V1", unit=1, vector=T)
-    AddQuantity(name="Triangle_V2", unit=1, vector=T)
-    AddQuantity(name="Triangle_V3", unit=1, vector=T)
     AddQuantity(name="ActualNormal", unit=1, vector=T)
     AddQuantity(name="TriangleIndex", unit=1)
     AddQuantity(name="TriangleFaceIndex", unit=1)
@@ -283,3 +285,4 @@ if (Options$tprec) {
 	AddGlobal(name="LiqTotalVelocityY", comment='use to determine avg velocity of droplets', unit="m/s")
 	AddGlobal(name="LiqTotalVelocityZ", comment='use to determine avg velocity of droplets', unit="m/s")
 	AddGlobal(name="LiqTotalPhase",	   		comment='use in line with LiqTotalVelocity to determine average velocity', unit="1")
+    AddGlobal(name="SpecialBoundaryPoints", comment="Number of boundary points for which wetting boundary conditions must be applied in a special way for stability", unit="1")
