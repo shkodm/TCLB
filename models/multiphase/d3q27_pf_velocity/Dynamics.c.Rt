@@ -302,7 +302,7 @@ CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 			// keep it as it is, calculated using the isotropic gradient
 			// and the boundary value
 		} else {
-			gradPhiVal_x = -(4*PhaseF(<?%s str_coord(-1, 0, 0, axis) ?>) - \
+			gradPhiVal_<?%s directions[axis+1] ?> = -(4*PhaseF(<?%s str_coord(-1, 0, 0, axis) ?>) - \
 							 PhaseF(<?%s str_coord(-2, 0, 0, axis) ?>) - 3*PhaseF(0, 0, 0))/(2.0*h);
 		}
 	}
@@ -310,7 +310,7 @@ CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 	// handled properly, otherwise continue using isotropic gradient
 	else if ((IsBoundary(<?%s str_coord(-1, 0, 0, axis) ?>) || forcedFiniteDifferenceInAllDirections)
 			 && (!IsBoundary(<?%s str_coord(2, 0, 0, axis) ?>))) {
-		gradPhiVal_x = (4*PhaseF(<?%s str_coord(1, 0, 0, axis)  ?>) -
+		gradPhiVal_<?%s directions[axis+1] ?> = (4*PhaseF(<?%s str_coord(1, 0, 0, axis)  ?>) -
 						PhaseF(<?%s str_coord(2, 0, 0, axis) ?>) - 3*PhaseF(0, 0, 0))/(2.0*h);
 	}
 
@@ -655,7 +655,6 @@ CudaDeviceFunction void calcWallPhase(){
 #endif
 */
 		} else if (IsSpecialBoundaryPoint == <?%d NORMAL_POINTING_INTO_SOLID_ON_NEXT_NODE ?>) {
-			// printf("This is a special boundary point\n");
 			// Pass. Dont' calculate anything, just set it to some huge number, purely to make sure
 			// that the value is corrected in calcWall_correction, and otherwise the error would be visible
 			PhaseF = 2342;
@@ -670,9 +669,11 @@ CudaDeviceFunction void calcWallPhase(){
 		} else {
 
 
+#if 0
 		if (IsBoundary_dyn(nw_x, nw_y, nw_z)) {
-			printf("Ooops! Trying to get the value from the boundary. I am at %lf %lf %lf. PhaseF to take is %lf\n", X, Y, Z, pf_f);
+			//printf("Ooops! Trying to get the value from the boundary. I am at %lf %lf %lf. PhaseF to take is %lf\n", X, Y, Z, pf_f);
 		}
+#endif
 
 #ifndef OPTIONS_altTangDir
 #ifdef OPTIONS_staircaseimp
@@ -1322,7 +1323,7 @@ CudaDeviceFunction void Init_wallNorm(){
 		}
 #ifdef OPTIONS_altContactAngle
 		// if some of distanced points point into the boundary, mark it to interpolate
-		// from closer nodes using surface energy method, otherwise use normal
+		// from closer nodes using surface energy method, otherwise continue the same procedure as before
 		if (will_interpolate_further_from_the_boundary && !will_interpolate_from_the_boundary) {
 			IsSpecialBoundaryPoint = <?%d GEOM_INTERPOLATING_POINTS_INTO_SOLID ?>;
 		}
