@@ -64,9 +64,9 @@ AddQuantity("SpecialBoundaryPoint", unit = 1)
 save_initial_PF = c("PF","Vel")
 save_initial    = c("g","h","PF")
 # not sure if "solid_boundary" is needed here
-save_iteration  = c("g","h","Vel","nw", "nw_actual", "st_interpolation", "solid_boundary")
-load_iteration  = c("g","h","Vel","nw", "nw_actual", "st_interpolation", "solid_boundary")
-load_phase      = c("g","h","Vel","nw", "nw_actual")
+save_iteration  = c("g","h","Vel","nw", "nw_actual", "st_interpolation", "solid_boundary", "PF")
+load_iteration  = c("g","h","Vel","nw", "nw_actual", "st_interpolation", "solid_boundary", "PF")
+load_phase      = c("g","h","Vel","nw", "nw_actual", "PF")
 
 if (Options$OutFlow){
 	for (d in rows(DensityAll)) {

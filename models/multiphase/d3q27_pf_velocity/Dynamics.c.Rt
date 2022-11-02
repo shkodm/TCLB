@@ -268,6 +268,12 @@ CudaDeviceFunction vector_t getGradPhi() {
 }
 
 
+/*
+  Corrects gradient values on the next layer closer to the boundary, trying
+  its best to avoid taking the boundary values into the calculation of gradient
+  and using 2nd order finite difference instead when possible. Should be
+  used in conjunction of function calculating isotropic gradient everywhere else.
+ */
 CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 	// handle boundaries
 	// NOTE: we don't want to use them because the boundary values
@@ -293,14 +299,24 @@ CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 
     real_t h = 1.0;
 
+
+	bool canForceFiniteDifferenceUp;
+	bool canForceFiniteDifferenceDown;
+
 	<?R for (axis in c(0,1,2)) { ?>
 
-	// chunk for direction <?%s directions[axis + 1] ?>
-	if (IsBoundary(<?%s str_coord(1, 0, 0, axis) ?>) || forcedFiniteDifferenceInAllDirections ) {
+	// if we want to use finite differences, try to pick the best directions
+	canForceFiniteDifferenceDown = forcedFiniteDifferenceInAllDirections && \
+		(!IsBoundary(<?%s str_coord(-1, 0, 0, axis) ?>)) && (!IsBoundary(<?%s str_coord(-2, 0, 0, axis) ?>));
+
+	canForceFiniteDifferenceUp = forcedFiniteDifferenceInAllDirections && \
+		(!IsBoundary(<?%s str_coord(1, 0, 0, axis) ?>)) && (!IsBoundary(<?%s str_coord(2, 0, 0, axis) ?>));
+
+	if (IsBoundary(<?%s str_coord(1, 0, 0, axis) ?>) || canForceFiniteDifferenceDown ) {
 		if (IsBoundary(<?%s str_coord(-1, 0, 0, axis) ?>)
 			|| IsBoundary(<?%s str_coord(-2, 0, 0, axis) ?>)) {
-			// keep it as it is, calculated using the isotropic gradient
-			// and the boundary value
+			// keep it as it is, calculated using the previously set gradient and the boundary
+			// value
 		} else {
 			gradPhiVal_<?%s directions[axis+1] ?> = -(4*PhaseF(<?%s str_coord(-1, 0, 0, axis) ?>) - \
 							 PhaseF(<?%s str_coord(-2, 0, 0, axis) ?>) - 3*PhaseF(0, 0, 0))/(2.0*h);
@@ -308,7 +324,7 @@ CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 	}
 	// check other direction and make sure that even points futher away are
 	// handled properly, otherwise continue using isotropic gradient
-	else if ((IsBoundary(<?%s str_coord(-1, 0, 0, axis) ?>) || forcedFiniteDifferenceInAllDirections)
+	else if ((IsBoundary(<?%s str_coord(-1, 0, 0, axis) ?>) || canForceFiniteDifferenceUp) \
 			 && (!IsBoundary(<?%s str_coord(2, 0, 0, axis) ?>))) {
 		gradPhiVal_<?%s directions[axis+1] ?> = (4*PhaseF(<?%s str_coord(1, 0, 0, axis)  ?>) -
 						PhaseF(<?%s str_coord(2, 0, 0, axis) ?>) - 3*PhaseF(0, 0, 0))/(2.0*h);
@@ -576,8 +592,14 @@ CudaDeviceFunction vector_t getGradPhi2() {
 
 CudaDeviceFunction void calcPhaseF(){
 	updateBoundary();
-	// TODO: Add a condition, if this is a wall cell, take the previous values, and make sure this value was saved up to this stage
-	PhaseF = <?R C(sum(h))?>;
+	// TODO: On the wall we want to take the previous value of the phase field, because
+	// it might be needed for calculation of the gradient
+	if (!( IamWall || IamSolid )) {
+		PhaseF = <?R C(sum(h))?>;
+	} else {
+		PhaseF = PhaseF(0,0,0);
+		// printf("Iteration %d: PhaseF at cell <%f, %f, %f> is: %f\n", constContainer.iter, X, Y, Z, PhaseF);
+	}
 }
 
 
@@ -655,9 +677,10 @@ CudaDeviceFunction void calcWallPhase(){
 #endif
 */
 		} else if (IsSpecialBoundaryPoint == <?%d NORMAL_POINTING_INTO_SOLID_ON_NEXT_NODE ?>) {
-			// Pass. Dont' calculate anything, just set it to some huge number, purely to make sure
+			// Pass for now. Dont' calculate anything, just set it to some huge number, purely to make sure
 			// that the value is corrected in calcWall_correction, and otherwise the error would be visible
-			PhaseF = 2342;
+			// and hopefulyl breaking the simulation
+			PhaseF = 2342e10;
 		} else if  (IsSpecialBoundaryPoint == <?%d NORMAL_POINTING_INTO_SOLID_ON_FURTHER_NEXT_NODE ?>) {
 			// eventhough I am geometric boundary condition, still apply surface energy
 			// here because otherwise we can't really apply anything else
@@ -926,7 +949,11 @@ CudaDeviceFunction void calcWallPhase(){
 
 
 		}
-	} 
+	}
+
+	if ( IamWall || IamSolid ) {
+		// printf("Iteration %d: Boundary condition PhaseF at cell <%f, %f, %f> is: %f\n", constContainer.iter, X, Y, Z, PhaseF);
+	}
 }
 
 CudaDeviceFunction real_t calcMu(real_t C){
@@ -1569,11 +1596,17 @@ CudaDeviceFunction void Run() {
 	// propagate it into the next iteration
 	IsBoundary = IsBoundary(0,0,0);
 	// If desired, incorporate a smoothing stage, in this we simply let diffusion occur
+	if (IamSolid || IamWall) {
+		// here PhaseF should be saved from the previus iteration
+		// printf("Iteration %d: Run PhaseF at cell <%f, %f, %f> is: %f\n", constContainer.iter, X, Y, Z, PhaseF(0,0,0));
+	}
     if ((NodeType & NODE_ADDITIONALS) == NODE_Smoothing) {
 		Init_distributions();
     } else {
-        updateBoundary();	
-    
+        updateBoundary();
+
+
+
 		#ifdef OPTIONS_BGK
 			if (NodeType & NODE_BGK) {
 				CollisionBGK();
@@ -1585,7 +1618,9 @@ CudaDeviceFunction void Run() {
 			} 
 		#endif
 	}
-        pnorm  = <?R C(sum(g)) ?>;
+	// propagate PhaseF further
+	PhaseF = PhaseF(0,0,0);
+    pnorm  = <?R C(sum(g)) ?>;
 }
 
 CudaDeviceFunction real_t calcTau(real_t pf){
