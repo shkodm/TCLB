@@ -722,6 +722,8 @@ CudaDeviceFunction void calcWallPhase(){
 				pf_f = pf_interpolated;
 
 
+
+
 				// apply surface energy BC to the interpolated value if I am edge case of geometric staircase and quit
 				// NOTE: Currently will never happen, see comments about the performance above
 				#ifdef OPTIONS_altContactAngle
@@ -738,8 +740,25 @@ CudaDeviceFunction void calcWallPhase(){
 // Case 1: Apply surface energy BC (with calculated pf_f with standard or staircase improvement)
 #ifndef OPTIONS_altContactAngle
 			// apply surface energy boundary conditions
-			a = -h * (4.0/IntWidth) * cos( radAngle );
-			PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
+
+
+		   if (PhaseF > -10) {
+
+#ifdef OPTIONS_staircaseimp
+
+			   // calculate a better point
+			   real_t h_actual = 0.5 * sqrt(nw_on_extended_x*nw_on_extended_x + nw_on_extended_y*nw_on_extended_y + nw_on_extended_z*nw_on_extended_z);
+			   // interpolate it
+			   real_t pf_f_actual = (PhaseF * 2*(h - h_actual) + 2*h_actual * pf_f) / (2*h);
+
+			   // use it in the formula
+			   a = -h_actual * (4.0/IntWidth) * cos( radAngle );
+			   PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f_actual;
+#endif
+		   } else {
+			   a = -h * (4.0/IntWidth) * cos( radAngle );
+			   PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
+			}
 #else
 
 
@@ -1041,6 +1060,10 @@ CudaDeviceFunction void Init_wallNorm(){
 			nw_actual_x = 0.0;
 			nw_actual_y = 0.0;
 			nw_actual_z = 0.0;
+
+			nw_on_extended_x = 0.0;
+			nw_on_extended_y = 0.0;
+			nw_on_extended_z = 0.0;
 #endif
 	  	} else { 
 		// no I am not surrounded, so calc normal:
@@ -1066,6 +1089,10 @@ CudaDeviceFunction void Init_wallNorm(){
 			}
 			myNorm[0] *= -1.0/3.0;myNorm[1] *= -1.0/3.0;myNorm[2] *= -1.0/3.0;
 			tmp = myNorm[0]*myNorm[0] + myNorm[1]*myNorm[1] + myNorm[2]*myNorm[2];
+
+			nw_on_extended_x = myNorm[0] / sqrt(tmp);
+			nw_on_extended_y = myNorm[1] / sqrt(tmp);
+			nw_on_extended_z = myNorm[2] / sqrt(tmp);
 
 			// Calculate the closest discrete direction for normal:
 			for (i = 0; i<27; i++) {
@@ -1199,6 +1226,12 @@ CudaDeviceFunction void Init_wallNorm(){
 		nw_actual_x = 0.0;
 		nw_actual_y = 0.0;
 		nw_actual_z = 0.0;
+
+		nw_on_extended_x = 0.0;
+		nw_on_extended_y = 0.0;
+		nw_on_extended_z = 0.0;
+
+
 		coeff_v1 = 0.0;
 		coeff_v2 = 0.0;
 		coeff_v3 = 0.0;

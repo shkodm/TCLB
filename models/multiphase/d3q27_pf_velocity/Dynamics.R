@@ -39,6 +39,11 @@ if (Options$staircaseimp) {
     AddDensity(name="nw_actual_y", dx=0, dy=0, dz=0, group="nw_actual")
     AddDensity(name="nw_actual_z", dx=0, dy=0, dz=0, group="nw_actual")
 
+
+    AddDensity(name="nw_on_extended_x", dx=0, dy=0, dz=0, group="nw_actual")
+    AddDensity(name="nw_on_extended_y", dx=0, dy=0, dz=0, group="nw_actual")
+    AddDensity(name="nw_on_extended_z", dx=0, dy=0, dz=0, group="nw_actual")
+
     # Standard staircase improvement
     AddDensity(name="coeff_v1", dx=0, dy=0, dz=0, group="st_interpolation")
     AddDensity(name="coeff_v2", dx=0, dy=0, dz=0, group="st_interpolation")
