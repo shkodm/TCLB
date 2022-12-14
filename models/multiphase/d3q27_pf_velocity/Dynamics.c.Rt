@@ -717,11 +717,29 @@ CudaDeviceFunction void calcWallPhase(){
 
 			// don't do staircase improvement if any of the interpolating nodes are solid
 			if (IsSpecialBoundaryPoint != <?%d NEXT_INTERPOLATING_POINTS_ARE_SOLID ?>) {
-				real_t pf_interpolated = coeff_v1 * pf_v1 + coeff_v2 * pf_v2 + coeff_v3 * pf_v3;
-				h = 0.5 * sqrt(nw_actual_x*nw_actual_x + nw_actual_y*nw_actual_y + nw_actual_z*nw_actual_z);
-				pf_f = pf_interpolated;
 
+				// the first iteration
+				if (PhaseF < -10) {
+					real_t pf_interpolated = coeff_v1 * pf_v1 + coeff_v2 * pf_v2 + coeff_v3 * pf_v3;
+					h = 0.5 * sqrt(nw_actual_x*nw_actual_x + nw_actual_y*nw_actual_y + nw_actual_z*nw_actual_z);
+					pf_f = pf_interpolated;
+				} else {
 
+					// full tetrahedron barycentric interpolation
+					real_t nw_normalized[3] = {nw_on_extended_x, nw_on_extended_y, nw_on_extended_z};
+
+					// get constant coordinate of the face (e.g. z = 1)
+					int component_index = d3q27_faces_drop_indexes[ face_index ];
+					// now get the actual coordinate of the triangle, lying closer than the actual face (e.g. z = 0.84), absolute value to handle all cases
+					real_t scale_nw = fabs(nw_normalized[component_index]);
+					// now do the full tetrahedron interpolation, using the actual triangle coordinates, assuming it intersects
+					// where the length is equal to 1
+					real_t pf_f_interpolated = scale_nw*(coeff_v1 * pf_v1 + coeff_v2 * pf_v2 + coeff_v3 * pf_v3) + (1 - scale_nw) * PhaseF;
+					pf_f = pf_f_interpolated;
+					// now h is midpoint between h = 1
+					h = 0.5 * 1;
+
+			   }
 
 
 				// apply surface energy BC to the interpolated value if I am edge case of geometric staircase and quit
@@ -742,23 +760,8 @@ CudaDeviceFunction void calcWallPhase(){
 			// apply surface energy boundary conditions
 
 
-		   if (PhaseF > -10) {
-
-#ifdef OPTIONS_staircaseimp
-
-			   // calculate a better point
-			   real_t h_actual = 0.5 * sqrt(nw_on_extended_x*nw_on_extended_x + nw_on_extended_y*nw_on_extended_y + nw_on_extended_z*nw_on_extended_z);
-			   // interpolate it
-			   real_t pf_f_actual = (PhaseF * 2*(h - h_actual) + 2*h_actual * pf_f) / (2*h);
-
-			   // use it in the formula
-			   a = -h_actual * (4.0/IntWidth) * cos( radAngle );
-			   PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f_actual;
-#endif
-		   } else {
-			   a = -h * (4.0/IntWidth) * cos( radAngle );
-			   PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
-			}
+		a = -h * (4.0/IntWidth) * cos( radAngle );
+		PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
 #else
 
 
