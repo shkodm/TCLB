@@ -670,7 +670,12 @@ CudaDeviceFunction void calcWallPhase(){
 
 #ifdef OPTIONS_staircaseimp
 
+		real_t scale_nw;
+
 // Really ugly way to mix compile time and runtime defs, I am sorry
+
+
+	    bool did_my_new_interpolation = false;
 #ifdef OPTIONS_altContactAngle
         bool use_surface_energy_staircase_imp = false;
 
@@ -729,15 +734,21 @@ CudaDeviceFunction void calcWallPhase(){
 					real_t nw_normalized[3] = {nw_on_extended_x, nw_on_extended_y, nw_on_extended_z};
 
 					// get constant coordinate of the face (e.g. z = 1)
-					int component_index = d3q27_faces_drop_indexes[ face_index ];
+					int component_index = face_index / 2; 
 					// now get the actual coordinate of the triangle, lying closer than the actual face (e.g. z = 0.84), absolute value to handle all cases
-					real_t scale_nw = fabs(nw_normalized[component_index]);
+					scale_nw = fabs(nw_normalized[component_index]);
 					// now do the full tetrahedron interpolation, using the actual triangle coordinates, assuming it intersects
 					// where the length is equal to 1
 					real_t pf_f_interpolated = scale_nw*(coeff_v1 * pf_v1 + coeff_v2 * pf_v2 + coeff_v3 * pf_v3) + (1 - scale_nw) * PhaseF;
 					pf_f = pf_f_interpolated;
 					// now h is midpoint between h = 1
 					h = 0.5 * 1;
+					did_my_new_interpolation = true;
+
+					// For testing geometric contact angle
+					real_t pf_interpolated = coeff_v1 * pf_v1 + coeff_v2 * pf_v2 + coeff_v3 * pf_v3;
+					//h = 0.5 * sqrt(nw_actual_x*nw_actual_x + nw_actual_y*nw_actual_y + nw_actual_z*nw_actual_z);
+					pf_f = pf_interpolated;
 
 			   }
 
@@ -853,9 +864,37 @@ CudaDeviceFunction void calcWallPhase(){
 			<?R } ?>
 
 			// extrapolate their components
-			vector_t grad_tangent_v = { 1.5 * proj_grad_1.x - 0.5 * proj_grad_2.x,
-										1.5 * proj_grad_1.y - 0.5 * proj_grad_2.y,
-										1.5 * proj_grad_1.z - 0.5 * proj_grad_2.z};
+
+			vector_t grad_tangent_v;
+
+			if (did_my_new_interpolation) {
+
+				real_t my_scale  = sqrt(nw_actual_x*nw_actual_x + nw_actual_y*nw_actual_y + nw_actual_z*nw_actual_z);
+				grad_tangent_v =    { 2 * proj_grad_1.x - proj_grad_2.x + (proj_grad_2.x - proj_grad_1.x)/(2*my_scale),
+									2 * proj_grad_1.y - proj_grad_2.y + (proj_grad_2.y - proj_grad_1.y)/(2*my_scale),
+									2 * proj_grad_1.z - proj_grad_2.z + (proj_grad_2.z - proj_grad_1.z)/(2*my_scale)};
+
+			} else {
+
+				grad_tangent_v = { 1.5 * proj_grad_1.x - 0.5 * proj_grad_2.x,
+								1.5 * proj_grad_1.y - 0.5 * proj_grad_2.y,
+								1.5 * proj_grad_1.z - 0.5 * proj_grad_2.z};
+			}
+
+			if (IsSpecialBoundaryPoint == <?%d NEXT_INTERPOLATING_POINTS_ARE_SOLID ?>) {
+				// still want to properly interpolate gradients, event though
+				// we did not do a proper interpolation
+				real_t my_scale  = sqrt(nw_x*nw_x + nw_y*nw_y + nw_z*nw_z);
+				grad_tangent_v =    { 2 * proj_grad_1.x - proj_grad_2.x + (proj_grad_2.x - proj_grad_1.x)/(2*my_scale),
+									2 * proj_grad_1.y - proj_grad_2.y + (proj_grad_2.y - proj_grad_1.y)/(2*my_scale),
+									2 * proj_grad_1.z - proj_grad_2.z + (proj_grad_2.z - proj_grad_1.z)/(2*my_scale)};
+
+
+				h = 0.5 * sqrt(nw_x*nw_x + nw_y*nw_y + nw_z*nw_z);
+
+			}
+
+
 
 
 			// compute the norm
@@ -864,7 +903,15 @@ CudaDeviceFunction void calcWallPhase(){
 									 grad_tangent_v.z * grad_tangent_v.z);
 
 			// apply geometric boundary condition
-			PhaseF =  tan(PI/2.0 - radAngle) * grad_tangent * 2.0*h + pf_f;
+
+			if (did_my_new_interpolation) {
+				PhaseF =  (tan(PI/2.0 - radAngle) * grad_tangent * 2.0*h / scale_nw) + pf_f;
+			} else {
+				PhaseF =  tan(PI/2.0 - radAngle) * grad_tangent * 2.0*h  + pf_f;
+			}
+
+
+
 #endif // end boundary condition pick
 		}
 	} 
