@@ -278,7 +278,7 @@ wiki/schema/<?%s m ?>.xsd:$(SRC)/schema.xsd.Rt $(SRC)/conf.R doc/elements.yaml <
 %_sp.c:%.c
 	@echo "  SP-CONST   $@"
 	@$(MKPATH) $@
-	@cat $< | sed -r 's/([^a-zA-Z0-9][0-9]+\.[0-9]*([eE][-+]?[0-9]+)?)[fL]+/\1f/g' > $@
+	@cat $< | sed -E 's/([^a-zA-Z0-9][0-9]+\.[0-9]*([eE][-+]?[0-9]+)?)[fL]+/\1f/g' > $@
 
 
 
