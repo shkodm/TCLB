@@ -191,7 +191,8 @@ int myprint(int level, int all, const char *fmt, ...)
     va_list args;
     va_start(args, fmt);
     static char buf[100*OUTPUT_LINE_LEN];
-    vsprintf(buf, fmt, args);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
     char* rank="";
     if ((level < D_only_root_level) && (!all)) {
       if (D_MPI_RANK != 0) return 0;
