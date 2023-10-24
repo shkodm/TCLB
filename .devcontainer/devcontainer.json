@@ -1,0 +1,13 @@
+{
+	"name": "Big (R+VTK)",
+	"image": "cfdgo/tclb:ubuntu-22.04-big",
+	"postCreateCommand": "make configure && ./configure --disable-cuda --enable-cpu-layout --with-openmp",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"REditorSupport.r",
+				"CFD-GO.tclb-helper"
+			]
+		}
+	}
+}
