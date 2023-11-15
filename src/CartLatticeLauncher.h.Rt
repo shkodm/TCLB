@@ -1,0 +1,39 @@
+<?R
+        source("conf.R")
+c_header();
+?>
+/** \file CartLatticeLauncher.h
+*/
+
+#ifndef CARTLATTICEEXECUTOR_H
+#define CARTLATTICEEXECUTOR_H
+
+#include "CartLatticeContainer.h"
+#include "LatticeData.hpp"
+
+struct CartLatticeLauncher {
+  CartLatticeContainer container;
+  LatticeData          data;
+
+  template < eOperationType I, eCalculateGlobals G, eStage S >
+  void RunBorder(CudaStream_t stream) const;
+  template < eOperationType I, eCalculateGlobals G, eStage S >
+  void RunInterior(CudaStream_t stream) const;
+  void Color(uchar4 *out_ptr) const;
+
+<?R
+for (q in rows(Quantities)) { ifdef(q$adjoint);
+        if (q$adjoint) {
+          node = "Node_Adj"
+        } else {
+          node = "Node"
+        }
+?>
+  void GetQuantity<?%s q$name ?>(lbRegion r, <?%s q$type ?>* tab, real_t scale) const;
+  void SampleQuantity<?%s q$name ?>(lbRegion r, <?%s q$type ?>* tab, real_t scale) const;
+<?R
+}
+ifdef() ?>
+};
+
+#endif // CARTLATTICEEXECUTOR_H

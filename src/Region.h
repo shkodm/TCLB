@@ -1,6 +1,7 @@
 
 #ifndef REGION_H
 #include <stdio.h>
+#include "cross.h"
 class lbRegion {
 public:
   int dx,dy,dz;
@@ -25,16 +26,16 @@ public:
     if (ret.nx <= 0 || ret.ny <= 0 || ret.nz <= 0) { ret.nx = ret.ny = ret.nz = 0; };
     return ret;
   };
-  inline int offset(int x,int y) {
+  int offset(int x,int y) const {
     return (x-dx) + (y-dy) * nx;
   };
   inline void print() {
     printf("Region: %dx%dx%d + %d,%d,%d\n", nx,ny,nz,dx,dy,dz);
   };
-  CudaHostFunction CudaDeviceFunction inline int offset(int x,int y,int z) {
+  CudaHostFunction CudaDeviceFunction int offset(int x,int y,int z) const {
     return (x-dx) + (y-dy) * nx + (z-dz) * nx * ny;
   };
-  CudaHostFunction CudaDeviceFunction inline size_t offsetL(int x,int y,int z) {
+  CudaHostFunction CudaDeviceFunction size_t offsetL(int x,int y,int z) const {
     return (x-dx) + (y-dy) * nx + (z-dz) * nx * ny;
   };
 
