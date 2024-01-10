@@ -1,7 +1,3 @@
-<?R
-        source("conf.R")
-	c_header()
-?>
 /**
     \file Global.h
     Declaration of global variables and functions. Including MPI connectivity info.
@@ -12,6 +8,8 @@
 
 #include "Consts.h"
 #include "types.h"
+#include "cross.h"
+
 #include <string>
 
 #ifdef _WIN32
@@ -21,49 +19,13 @@
 #endif
 
     #define BOUNDARY_UX UX_mid
-    #define NUMBER_OF_DENSITIES <?%d nrow(DensityAll) ?>
     
     #include "MPMD.hpp"
     extern MPMDHelper MPMD;
-
-#ifndef INFO_H
-    #include "cross.h"
-    #include "Region.h"
-    typedef struct {
-        float x;
-        float y;
-    } vector_t_b;
-
-/// Information on connectivity of a processor
-    struct NodeInfo {
-        lbRegion region; ///< Local Lattice region
-        int rank; ///< MPI rank of the processor <?R
-for (m in Margin) { ?>
-        int <?%s m$side ?>; ///< MPI rank of the processor on [<?%2d m$dx ?>,<?%2d m$dy?>,<?%2d m$dz?>] side <?R
-} ?>
-    };
-
-/// Gathered connectivity info
-    struct MPIInfo {
-        NodeInfo * node; ///< Table of all processors info
-        lbRegion totalregion; ///< Global Lattice region
-        int size; ///< MPI size
-        int rank; ///< (My) MPI rank
-        int gpu; ///< (My) GPU selected
-	int divx, divy, divz; ///< MPI division
-    };
-
-    void fillSides(MPIInfo, int, int, int);
-
-#define INFO_H 1
-#endif
 /*
 #ifndef SETTINGS_H
-<?R
-	for (v in rows(Settings)) { ?>
-    CudaExternConstantMemory(real_t <?%s v$name ?>); <?R
-	} ?>
-    void initSettings();
+
+void initSettings();
 
 #define SETTINGS_H 1
 #endif
@@ -158,12 +120,11 @@ int kbhit(void);
 CudaConstantMemory const  real_t 	wt[5] = {2./6., 	1./6., 1./6., 1./6., 1./6.};
 CudaConstantMemory const  real_t 	wf[9] = {4./9., 	1./9., 1./9., 1./9., 1./9., 	1./36., 1./36., 1./36., 1./36.};
 
-	<?R source("lib/lattice.R") ?>
 	
-	CudaConstantMemory real_t const  d2q9_ex[9] = {<?R cat(d2q9[,1],sep=",") ?>};
-	CudaConstantMemory real_t const  d2q9_ey[9] = {<?R cat(d2q9[,2],sep=",") ?>};
-	CudaConstantMemory real_t const  d2q5_ex[5] = {<?R cat(d2q9[1:5,1],sep=",") ?>};
-	CudaConstantMemory real_t const  d2q5_ey[5] = {<?R cat(d2q9[1:5,2],sep=",") ?>};
+	CudaConstantMemory real_t const  d2q9_ex[9] = {0,1,0,-1,0,1,-1,-1,1};
+	CudaConstantMemory real_t const  d2q9_ey[9] = {0,0,1,0,-1,1,1,-1,-1};
+	CudaConstantMemory real_t const  d2q5_ex[5] = {0,1,0,-1,0};
+	CudaConstantMemory real_t const  d2q5_ey[5] = {0,0,1,0,-1};
 
 
 #endif

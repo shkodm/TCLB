@@ -1,13 +1,6 @@
-#include "Consts.h"
-#ifdef EMBEDED_PYTHON
-    #include <Python.h>
-    #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#endif
 
-<?R
- library(gvector,quiet=TRUE,warn.conflicts=FALSE)
- library(polyAlgebra,quiet=TRUE,warn.conflicts=FALSE)
-?>
+#include "Consts.h"
+
 
 
 #include <stdlib.h>
@@ -20,18 +13,14 @@
 #include "Region.h"
 #include "Geometry.h"
 #include "Global.h"
-#include "def.h"
 #include "vtkOutput.h"
 #include "utils.h"
 #include "spline.h"
 #include <assert.h>
 
+#define NoneFlag ((big_flag_t) 0)
 
-<?R
-				x = c(0,1,-1);
-				U = expand.grid(x,x,x)
-?>
-const int d3q27_vec[] = { <?%s paste(t(U),collapse=",") ?> };
+const int d3q27_vec[] = { 0,0,0,1,0,0,-1,0,0,0,1,0,1,1,0,-1,1,0,0,-1,0,1,-1,0,-1,-1,0,0,0,1,1,0,1,-1,0,1,0,1,1,1,1,1,-1,1,1,0,-1,1,1,-1,1,-1,-1,1,0,0,-1,1,0,-1,-1,0,-1,0,1,-1,1,1,-1,-1,1,-1,0,-1,-1,1,-1,-1,-1,-1,-1 };
 
 /// Main constructor
 /**
@@ -39,15 +28,14 @@ const int d3q27_vec[] = { <?%s paste(t(U),collapse=",") ?> };
         \param r Global Lattice region
         \param units_ Units object associated with the this Geometry object
 */
-Geometry::Geometry(const lbRegion & r, const lbRegion & tr, const UnitEnv &units_):region(r), totalregion(tr), units(units_)
+Geometry::Geometry(const lbRegion & r, const lbRegion & tr, const UnitEnv &units_, const Model * model_):model(model_), region(r), totalregion(tr), units(units_)
 {
-    geom = new flag_t[region.sizeL()];
+	geom.resize(region.sizeL());
     Q = NULL;
     for (size_t i = 0; i < region.sizeL(); i++) {
-	geom[i] = 0;
+		geom[i] = 0;
     }
-    output("Creating geom size:%ld\n", region.sizeL());
-    SettingZones["DefaultZone"] = 0;
+    output("Creating geom size: %ld\n", region.sizeL());
 }
 
 inline void Geometry::ActivateCuts() {
@@ -144,13 +132,13 @@ double Geometry::val_d(pugi::xml_attribute attr)
 */
 int Geometry::setFlag(const pugi::char_t * name)
 {
-    pugi::xml_node node = fg_xml.find_child_by_attribute("Type", "name", name);
-    if (!node) {
+    Model::NodeTypeFlag it = model->nodetypeflags.by_name(name);
+    if (! it) {
 	ERROR("Unknown flag (in xml): %s\n", name);
 	return -1;
     }
-    fg = node.attribute("value").as_int();
-    E(setMask(node.attribute("mask").value()));
+    fg = it.flag;
+    fg_mask = it.group_flag;
     fg_mode = MODE_OVERWRITE;
     return 0;
 }
@@ -164,12 +152,12 @@ int Geometry::setFlag(const pugi::char_t * name)
 */
 int Geometry::setMask(const pugi::char_t * name)
 {
-    pugi::xml_node node = fg_xml.find_child_by_attribute("Mask", "name", name);
-    if (!node) {
+    Model::NodeTypeGroupFlag it = model->nodetypegroupflags.by_name(name);
+    if (! it) {
 	error("Unknown mask (in xml): %s\n", name);
 	return -1;
     }
-    fg_mask = node.attribute("value").as_int(-1);
+    fg_mask = it.flag;
     return 0;
 }
 
@@ -193,20 +181,10 @@ int Geometry::setMode(const pugi::char_t * mode)
 	return 0;
 }
 
-int Geometry::setZone(const pugi::char_t * name)
+void Geometry::setZone(int zone_number)
 {
-    int ZoneNumber;
-    if (SettingZones.count(name) > 0) {
-        ZoneNumber = SettingZones[name];
-    } else {
-        ZoneNumber = SettingZones.size();
-        debug1("Setting new zone: %s -> %d\n", name, ZoneNumber);
-        SettingZones[name] = ZoneNumber;
-    }
-    assert(ZoneNumber < ZONE_MAX);
-    fg      = (fg      &(~ NODE_SETTINGZONE )) |  (ZoneNumber << ZONE_SHIFT);
+    fg      = (fg      &(~ NODE_SETTINGZONE )) |  (zone_number << ZONE_SHIFT);
     fg_mask =  fg_mask |   NODE_SETTINGZONE;
-    return 0;
 }
 
 #define MAX_INT 2e9;
@@ -308,18 +286,18 @@ lbRegion Geometry::getRegion(const pugi::xml_node & node)
 }
 
 /// Fill a node with foreground flag
-inline flag_t Geometry::Dot(int x, int y, int z)
+inline big_flag_t Geometry::Dot(int x, int y, int z)
 {
     if (region.isIn(x, y, z)) {
 	int i = region.offset(x, y, z);
 	if (geom[i] & fg_mask) {
-		if (fg_mode == MODE_FILL) return 0;
+		if (fg_mode == MODE_FILL) return NoneFlag;
 	} else {
-		if (fg_mode == MODE_CHANGE) return 0;
+		if (fg_mode == MODE_CHANGE) return NoneFlag;
 	}
 	return geom[i] = (geom[i] & (~fg_mask)) | fg;
     } else 
-    return 0;
+    return NoneFlag;
 }
 
 /// Check if a point is inside a sphere
@@ -482,21 +460,26 @@ inline cut_t smaller(cut_t a,cut_t b) {
 
 cut_t calcCut(STL_tri tri, double x, double y, double z, double dx, double dy, double dz) {
 	double mat[16],b[4],r[4];
-	<?R
-		M = PV("mat[",1:16-1,"]")
-		dim(M) = c(4,4)
-		W = M
-		xyz = c("x","y","z");
-		W[1:3,1] = PV(xyz) - PV("tri.p1[",1:3-1,"]")
-		W[1:3,2] = PV(xyz) - PV("tri.p2[",1:3-1,"]")
-		W[1:3,3] = PV(xyz) - PV("tri.p3[",1:3-1,"]")
-		W[1:3,4] = PV("d",xyz)
-		W[4,1:4] = c(1,1,1,0)
-		b = c(0,0,0,1)
-		C(M,W)
-		C(PV("b[",1:4-1,"]"),c(0,0,0,1))
-	?>
-//	return 0;
+	mat[0] = -tri.p1[0] + x;
+	mat[1] = -tri.p1[1] + y;
+	mat[2] = -tri.p1[2] + z;
+	mat[3] = 1;
+	mat[4] = -tri.p2[0] + x;
+	mat[5] = -tri.p2[1] + y;
+	mat[6] = -tri.p2[2] + z;
+	mat[7] = 1;
+	mat[8] = -tri.p3[0] + x;
+	mat[9] = -tri.p3[1] + y;
+	mat[10] = -tri.p3[2] + z;
+	mat[11] = 1;
+	mat[12] = dx;
+	mat[13] = dy;
+	mat[14] = dz;
+	mat[15] = 0;
+	b[0] = 0;
+	b[1] = 0;
+	b[2] = 0;
+	b[3] = 1;
 	GaussSolve(mat,b,r,4);
 	if (r[0] < 0) return NO_CUT;
 	if (r[1] < 0) return NO_CUT;
@@ -1065,77 +1048,7 @@ int Geometry::Draw(pugi::xml_node & node)
 			    Dot(x, y, z);
 			}
          }
-    } else if (strcmp(n.name(), "PythonInline") == 0) {
-        #ifdef EMBEDED_PYTHON
-        
-         if (!Py_IsInitialized()) {
-            notice("Python Init");
-            Py_Initialize();
-        }    
-        // Make sure the GIL has been created since we need to acquire it in our
-        // callback to safely call into the python application.
-        
-        PyObject *pGlobal;
-        PyObject* pyModule, *pLocal, *pValue;
-
-        PyGILState_STATE state;
-        state = PyGILState_Ensure();
-   
-        pyModule = PyImport_AddModule("__main__"); 
-        pLocal = PyModule_GetDict(pyModule);
-        pGlobal = PyModule_GetDict(pyModule);
-
-
-
-        pValue = PyRun_String( n.child_value(), Py_file_input, pGlobal, pLocal );
-        if (pValue == NULL){
-             error("Provided Python code is not executable or does not contain 'test' function");    
-        }
-
-        PyObject* pFunc = PyObject_GetAttrString(pyModule, "test"); ;
-     //   Py_INCREF(pFunc);
-        Py_DECREF(pValue);
-
-
-        if (pFunc && PyCallable_Check(pFunc)) {
-            PyObject* pArgs;
-            pArgs = PyTuple_New(3);
-  
-            for (int x = reg.dx; x < reg.dx + reg.nx; x++)
-        	for (int y = reg.dy; y < reg.dy + reg.ny; y++)
-	            for (int z = reg.dz; z < reg.dz + reg.nz; z++) {
-
-                    PyTuple_SetItem( pArgs, 0, PyFloat_FromDouble((x-reg.dx)/(real_t)reg.nx));
-                    PyTuple_SetItem( pArgs, 1, PyFloat_FromDouble((y-reg.dy)/(real_t)reg.ny));
-                    PyTuple_SetItem( pArgs, 2, PyFloat_FromDouble((z-reg.dz)/(real_t)reg.nz));
-           
-                    //Call my function, passing it the number four
-                    pValue = PyObject_CallObject(pFunc, pArgs);
-
-           			if (  PyLong_AsLong(pValue) == 1 ) {
-   			             Dot(x, y, z);
-		            }
-                 
-                 }   
-            Py_DECREF(pArgs);
-        } else {
-            error("Provided Python code is not executable or does not contain 'test' function");        
-        }
-
-
-        Py_DECREF(pValue);
-  //      Py_XDECREF(pFunc);
- //       Py_DECREF(pGlobal);
-//        Py_DECREF(pLocal);
-        PyGILState_Release(state);
-      //  Py_Finalize();   
-
-        #else
-            error("You need to compile PYTHON support for this geometry element");
-	    return -1;
-        #endif
-
-	} else if (strcmp(n.name(), "STL") == 0) {
+    } else if (strcmp(n.name(), "STL") == 0) {
 	    debug1("Filling stl geometry with flag %d (%d)\n", fg, fg_mask);
 	    DEBUG1(reg.print();)
 		if (loadSTL(reg, n))
@@ -1148,7 +1061,7 @@ int Geometry::Draw(pugi::xml_node & node)
 	} else if (strcmp(n.name(), "Text") == 0) {
 	    lbRegion crop = getRegion(n.parent());
 	    crop = region.intersect(crop);
-	    crop.print();
+	    // crop.print();
 	    if (!n.attribute("file")) {
 		error("No 'file' attribute in 'Text' element in xml conf\n");
 		return -1;
@@ -1159,12 +1072,47 @@ int Geometry::Draw(pugi::xml_node & node)
 		return -1;
 	    }
 	    output("Reading file %s\n", n.attribute("file").value());
-	    for (int x = reg.dx; x < reg.dx + reg.nx; x++)
-		for (int y = reg.dy; y < reg.dy + reg.ny; y++)
-		    for (int z = reg.dz; z < reg.dz + reg.nz; z++) {
+	    int p[3], dp[3], np[3], xp=-1, yp=-1, zp=-1;
+	    dp[0] = 0; np[0] = 1; dp[1] = 0; np[1] = 1; dp[2] = 0; np[2] = 1;
+	    if (n.attribute("order")) {
+	    	const char * ord = n.attribute("order").value();
+	    	int len = strlen(ord);
+	    	if (len != 3) {
+	    		ERROR("order attribute in Text has to have 3 characters\n");
+	    		return -1;
+		}
+	    	for (int k=0;k<len;k++) {
+	    		if (ord[k] == 'x' && xp == -1) {
+	    			xp = k;
+			} else if (ord[k] == 'y' && yp == -1) {
+	    			yp = k;
+			} else if (ord[k] == 'z' && zp == -1) {
+	    			zp = k;
+			} else {
+		    		ERROR("wrong characters in order attribute in Text: '%s'\n", ord);
+		    		return -1;
+			}
+		}
+	    } else {
+	    	xp = 0;
+	    	yp = 1;
+		zp = 2;
+	    }
+	    dp[xp] = reg.dx;
+	    np[xp] = reg.nx;
+	    dp[yp] = reg.dy;
+	    np[yp] = reg.ny;
+	    dp[zp] = reg.dz;
+	    np[zp] = reg.nz;
+	    for (p[0] = dp[0]; p[0] < dp[0]+np[0]; p[0]++)
+	        for (p[1] = dp[1]; p[1] < dp[1]+np[1]; p[1]++)
+		    for (p[2] = dp[2]; p[2] < dp[2]+np[2]; p[2]++) {
+		    	int x = p[xp];
+		    	int y = p[yp];
+		    	int z = p[zp];
 			int v;
 			int ret = fscanf(f, "%d", &v);
-                        if (ret == EOF) {
+                        if (ret != 1) {
                             ERROR("File (%s) ended while reading\n", n.attribute("file").value());
                             return -1;
                         }
@@ -1190,65 +1138,81 @@ int Geometry::loadZone(const char *name)
 {
     pugi::xml_node node = fg_xml.find_child_by_attribute("Zone", "name", name);
     if (!node) {
-	error("Unknown zone (in xml): %s", name);
-	return -1;
+        error("Unknown zone (in xml): %s", name);
+        return -1;
     }
     E(Draw(node));
     return 0;
-
 }
 
-/// Loades Geometry from a XML tree
-int Geometry::load(pugi::xml_node & node)
+pugi::xml_document& getXMLDef() {
+  static pugi::xml_document xml_def;
+  static bool dummy_static_init = [&] () -> bool {
+    const char* xml_definition = "<Geometry>\
+    	<Zone name='Inlet'> <Box dx='0' dy='0' dz='0' fx='0' fy='-1' fz='-1'/></Zone>\
+    	<Zone name='Outlet'> <Box dx='-1' dy='0' dz='0' fx='-1' fy='-1' fz='-1'/></Zone>\
+    	<Zone name='Channel'>\
+    		<Box dx='0' dy='0' dz='0' fx='-1' fy='0' fz='-1'/>\
+    		<Box dx='0' dy='-1' dz='0' fx='-1' fy='-1' fz='-1'/>\
+    	</Zone>\
+    	<Zone name='Tunnel'>\
+    		<Box dx='0' dy='0' dz='0' fx='-1' fy='0' fz='-1'/>\
+    		<Box dx='0' dy='-1' dz='0' fx='-1' fy='-1' fz='-1'/>\
+    		<Box dx='0' dy='0' dz='0' fx='-1' fy='-1' fz='0'/>\
+    		<Box dx='0' dy='0' dz='-1' fx='-1' fy='-1' fz='-1'/>\
+    	</Zone>\
+    	<Zone name='Tunnel'> <Box dx='0' dy='0' dz='0' fx='0' fy='-1' fz='-1'/></Zone>\
+    	<Zone name='Inlet'><Box dx='0' dy='0' dz='0' fx='0' fy='-1' fz='-1'/></Zone>\
+    </Geometry>";
+    const auto init_status = xml_def.load_string(xml_definition);
+    if(!init_status) {
+      ERROR("Error while parsing in-program default settings xml: %s\n", init_status.description());
+      std::terminate();
+    }
+    return true;
+  }();
+  return xml_def;
+}
+
+/// Loads Geometry from a XML tree
+int Geometry::load(pugi::xml_node& node, const std::map<std::string, int>& zone_map)
 {
-	output("loading geometry ...\n");
-    pugi::xml_node geom_def = xml_def.child("Geometry");
+    using namespace std::string_view_literals;
+	output("Loading geometry...");
+    pugi::xml_node geom_def = getXMLDef().child("Geometry");
     fg_xml = node;
     for (pugi::xml_node z = geom_def.first_child(); z; z = z.next_sibling()) {
-	pugi::xml_attribute attr = z.attribute("name");
-	if (!attr)
-	    continue;
-	if (node.find_child_by_attribute(z.name(), "name", attr.value()))
-	    continue;
-	node.prepend_copy(z);
+        pugi::xml_attribute attr = z.attribute("name");
+        if (!attr) continue;
+        if (node.find_child_by_attribute(z.name(), "name", attr.value())) continue;
+        node.prepend_copy(z);
     }
     for (pugi::xml_node n = node.first_child(); n; n = n.next_sibling()) {
-	if (strcmp(n.name(), "Zone") == 0)
-	    continue;
-	if (strcmp(n.name(), "Type") == 0)
-	    continue;
-	if (strcmp(n.name(), "Mask") == 0)
-	    continue;
-	E(setFlag(n.name()));
-	for (pugi::xml_attribute attr = n.first_attribute(); attr; attr = attr.next_attribute()) {
-	    if (strcmp(attr.name(), "name") == 0) {
-	        E(setZone(attr.value()));
-	    } else if (strcmp(attr.name(), "mask") == 0) {
-	        E(setMask(attr.value()));
-	    } else if (strcmp(attr.name(), "mode") == 0) {
-	        E(setMode(attr.value()));
-	    } else {
-	        
-	    }
-	}
-	{
-	    pugi::xml_attribute attr = n.attribute("zone");
-	    if (attr) {
-		loadZone(attr.value());
-	    }
+        if(n.name() == "Zone"sv || n.name() == "Type"sv || n.name() == "Mask"sv) continue;
+        E(setFlag(n.name()));
+        for (pugi::xml_attribute attr = n.first_attribute(); attr; attr = attr.next_attribute()) {
+	        if (attr.name() == "name"sv) {
+	            const int zone_number = zone_map.at(std::string(attr.value()));
+                setZone(zone_number);
+            } else if (attr.name() == "mask"sv) {
+                E(setMask(attr.value()));
+            } else if (attr.name() == "mode"sv) {
+                E(setMode(attr.value()));
+            }
         }
-	E(Draw(n));
+        if (auto attr = n.attribute("zone"); attr) {
+            loadZone(attr.value());
+        }
+        E(Draw(n));
     }
-    if (node.attribute("save")) {
-		writeVTI(node.attribute("save").value());
-    }
+    if (node.attribute("save"))
+        writeVTI(node.attribute("save").value());
     return 0;
 }
 
 Geometry::~Geometry()
 {
     debug1("[%d] Destroy geom\n", D_MPI_RANK);
-    delete[]geom;
     if (Q != NULL) delete[] Q;
 }
 
@@ -1270,7 +1234,7 @@ void Geometry::writeVTI(const char *name)
 	return;
     }
     vtkFile.Init(region, "");
-    vtkFile.WriteField("geom", geom);
+    vtkFile.WriteField("geom", geom.data());
     if (Q != NULL) {
         size_t regsize = region.sizeL();
 
