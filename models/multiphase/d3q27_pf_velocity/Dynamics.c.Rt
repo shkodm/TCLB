@@ -150,7 +150,8 @@ CudaDeviceFunction vector_t calcGradPhi()
 		    ?>
 
         auto boundary_marker = NodeType & NODE_BOUNDARY;
-        if (boundary_marker == NODE_EPressure || boundary_marker == NODE_WPressure) {
+        <?R condition = paste(paste0("boundary_marker == NODE_", c(dotR_my_velocity_boundaries, dotR_my_pressure_boundaries), collapse = ' || ')) ?>
+        if (<?%s condition ?>) {
             gradPhi.x = 0.0;
             gradPhi.y = 0.0;
             gradPhi.z = 0.0;
@@ -236,7 +237,8 @@ CudaDeviceFunction real_t calcMu(real_t C)
 	#else
 
         auto boundary_marker = NodeType & NODE_BOUNDARY;
-        if (boundary_marker == NODE_EPressure || boundary_marker == NODE_WPressure) {
+        <?R condition = paste(paste0("boundary_marker == NODE_", c(dotR_my_velocity_boundaries, dotR_my_pressure_boundaries), collapse = ' || ')) ?>
+        if (<?%s condition ?>) {
             lpPhi = 0.0;
         }
 
@@ -275,12 +277,17 @@ CudaDeviceFunction real_t calcF_phi(int i, real_t tmp1, real_t nx, real_t ny, re
 	return f_phi;
 }
 
+CudaDeviceFunction void InitPhaseFforWallNormals()
+{
+	if ( IamWall || IamSolid ) PhaseF = -999;
+}
+
 /*	INITIALISATION:	*/
 CudaDeviceFunction void Init() 
 {
 	PhaseF = PhaseField;
 	specialCases_Init();
-	if ( IamWall || IamSolid ) PhaseF = -999;
+    InitPhaseFforWallNormals();
 
 	if (developedFlow > 0.1) {
 		U = 6.0 * Uavg * Y*(HEIGHT - Y)/(HEIGHT*HEIGHT);
@@ -303,7 +310,7 @@ CudaDeviceFunction void InitFromFieldsStage()
 	U = Init_UX_External;
 	V = Init_UY_External;
 	W = Init_UZ_External;
-	if ( IamWall || IamSolid ) PhaseF = -999;
+    InitPhaseFforWallNormals();
 	pnorm = 0.0; // initialise as zero and fill in later stage
 }
 
@@ -314,7 +321,7 @@ CudaDeviceFunction void InitFromFieldsStageWithNormals()
 	U = Init_UX_External;
 	V = Init_UY_External;
 	W = Init_UZ_External;
-	if ( IamWall || IamSolid ) PhaseF = -999;
+    InitPhaseFforWallNormals();
 	pnorm = 0.0; // initialise as zero and fill in later stage
     nw_x = Init_nwx_external;
     nw_y = Init_nwy_external;
@@ -659,16 +666,22 @@ CudaDeviceFunction void updateBoundary(){
 			BounceBack();
 			break;
         <?R
-        for (ii in 1:6){
+        for (ii in 1:cube_faces){
         ?>
         case NODE_<?R C(my_velocity_boundaries[ii])?>:
 			<?R C(my_velocity_boundaries[ii])?>();
 			break;
-		case NODE_<?R C(my_pressure_boundaries[ii])?>:
-			<?R C(my_pressure_boundaries[ii])?>();
-			break;
 		<?R
         }
+        ?>
+        <?R
+        for (my_pressure_boundary in dotR_my_pressure_boundaries) {
+        ?>
+		case NODE_<?%s my_pressure_boundary ?>:
+			<?%s my_pressure_boundary ?>();
+			break;
+		<?R
+              }
         ?>
 		case NODE_MovingWall_N:
 			MovingNWall();
