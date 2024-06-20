@@ -485,32 +485,43 @@ CudaDeviceFunction void CalcFSubGrid() {
 
         real_t dist = sqrt(p.diff.x*p.diff.x + p.diff.y*p.diff.y + p.diff.z*p.diff.z);
 
-        if ((dist - p.rad) < 0.5) {
-            real_t localCoverage = 0.0;
+        real_t tol = 1e-10;
+        // if particle is within boundaries of the node
+        bool fully_inside_cell = ( ( p.diff.x + p.rad <= (0.5 + tol)) && (p.diff.x - p.rad >= - (0.5 + tol)) \
+                                    && ( p.diff.y + p.rad <= (0.5 + tol)) && (p.diff.y - p.rad >= -(0.5 + tol)) \
+                                    && ( p.diff.z + p.rad <= (0.5 + tol ))  && (p.diff.z - p.rad >= - (0.5 + tol)) );
+        if (fully_inside_cell) {
+            /* printf("I am inside!"); */
+            /* printf("Particle with radius %lf is too close to the node. Distance is %lf\n. Iteration is %d", p.rad, dist, constContainer.iter); */
+            /* printf("Particle radius is %lf\n", p.rad); */
+            /* printf("Particle position is %lf %lf %lf\n", p.pos.x, p.pos.y, p.pos.z); */
+            /* printf("Node position is %lf %lf %lf\n", X, Y, Z); */
 
-            if ((dist - p.rad) < -1.0){
-                printf("Particle with radius %lf is too close to the node. Distance is %lf", p.rad, dist);
+            vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
+            vector_t u_flow = {u[0], u[1], u[2]};
 
-                vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
-                vector_t u_flow = {u[0], u[1], u[2]};
+            vector_t u_diff;
+            u_diff.x = u_particle.x - u_flow.x;
+            u_diff.y = u_particle.y - u_flow.y;
+            u_diff.z = u_particle.z - u_flow.z;
 
-                vector_t u_diff;
-                u_diff.x = u_particle.x - u_flow.x;
-                u_diff.y = u_particle.y - u_flow.y;
-                u_diff.z = u_particle.z - u_flow.z;
+            vector_t force;
+            real_t u_diff_mag = sqrt(u_diff.x*u_diff.x + u_diff.y*u_diff.y + u_diff.z*u_diff.z);
 
-                vector_t force;
-                real_t u_diff_mag = sqrt(u_diff.x*u_diff.x + u_diff.y*u_diff.y + u_diff.z*u_diff.z);
-
-                real_t Re = u_diff_mag * (2*p.rad) / nu;
+            real_t nu_app = (omegaF-0.5)/3.0;
+            real_t Re = u_diff_mag * (2*p.rad) / nu_app;
 //#                real_t drag_coeff = 24.0/Re * (1.0 + 0.15*pow(Re, 0.687));
-                real_t drag_coeff = 1 + 0.15*pow(Re, 0.687);
-                force.x = 3*PI * (p.rad*2)*nu* Rho*u_diff.x * drag_coeff;
-                force.y = 3*PI * (p.rad*2)*nu* Rho*u_diff.y * drag_coeff;
-                force.z = 3*PI * (p.rad*2)*nu* Rho*u_diff.z * drag_coeff;
+            real_t drag_coeff = 1 + 0.15*pow(Re, 0.687);
 
-                p.applyForce(force);
-            }
+
+            /* printf("Nu app is %lf\n, omegaF is %lf\n", nu_app, omegaF); */
+            /* printf("Drag coefficient is %lf. Reynolds number is %lf U diff mag %lf , p.rad %lf, nu %lf\n", drag_coeff, Re, u_diff_mag, p.rad, nu); */
+
+            force.x = 3*PI * (p.rad*2)*nu* Rho*u_diff.x * drag_coeff;
+            force.y = 3*PI * (p.rad*2)*nu* Rho*u_diff.y * drag_coeff;
+            force.z = 3*PI * (p.rad*2)*nu* Rho*u_diff.z * drag_coeff;
+
+            p.applyForce(force);
         }
     }
 }
@@ -523,7 +534,7 @@ CudaDeviceFunction void CalcFSubGrid() {
 <?R if (Options$particles) { ?>
 
 CudaDeviceFunction void CalcF() {
-    CalcFSubGrid();
+//    CalcFSubGrid();
     real_t u[3], d;
    
     real_t AccelX = aX_mean + aX_amp*sin(Time*2*PI*aX_freq);
