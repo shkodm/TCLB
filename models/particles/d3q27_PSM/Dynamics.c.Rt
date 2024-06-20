@@ -467,7 +467,63 @@ CudaDeviceFunction void CalcEquilibrium(real_t f_tab[27], real_t d, real_t u[3])
 
 <?R if (Options$particles) { ?>
 
+CudaDeviceFunction void CalcFSubGrid() {
+    real_t u[3], Rho;
+    real_t AccelX = aX_mean + aX_amp*sin(Time*2*PI*aX_freq);
+
+    <?R
+        Rho = PV("Rho")
+        u = PV("u[",1:3-1,"]")
+        a = PV("Accel", c("X", "Y", "Z"))
+        f = PV("f[",1:27-1,"]")
+
+        C( Rho, sum(f) )
+        C( u, f %*% U * Rho^{-1} + a*0.5 )
+    ?>
+
+	for (auto p : SyncParticleIterator(X,Y,Z)) {
+
+        real_t dist = sqrt(p.diff.x*p.diff.x + p.diff.y*p.diff.y + p.diff.z*p.diff.z);
+
+        if ((dist - p.rad) < 0.5) {
+            real_t localCoverage = 0.0;
+
+            if ((dist - p.rad) < -1.0){
+                printf("Particle with radius %lf is too close to the node. Distance is %lf", p.rad, dist);
+
+                vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
+                vector_t u_flow = {u[0], u[1], u[2]};
+
+                vector_t u_diff;
+                u_diff.x = u_particle.x - u_flow.x;
+                u_diff.y = u_particle.y - u_flow.y;
+                u_diff.z = u_particle.z - u_flow.z;
+
+                vector_t force;
+                real_t u_diff_mag = sqrt(u_diff.x*u_diff.x + u_diff.y*u_diff.y + u_diff.z*u_diff.z);
+
+                real_t Re = u_diff_mag * (2*p.rad) / nu;
+//#                real_t drag_coeff = 24.0/Re * (1.0 + 0.15*pow(Re, 0.687));
+                real_t drag_coeff = 1 + 0.15*pow(Re, 0.687);
+                force.x = 3*PI * (p.rad*2)*nu* Rho*u_diff.x * drag_coeff;
+                force.y = 3*PI * (p.rad*2)*nu* Rho*u_diff.y * drag_coeff;
+                force.z = 3*PI * (p.rad*2)*nu* Rho*u_diff.z * drag_coeff;
+
+                p.applyForce(force);
+            }
+        }
+    }
+}
+<?R } ?>
+
+
+
+
+
+<?R if (Options$particles) { ?>
+
 CudaDeviceFunction void CalcF() {
+    CalcFSubGrid();
     real_t u[3], d;
    
     real_t AccelX = aX_mean + aX_amp*sin(Time*2*PI*aX_freq);
