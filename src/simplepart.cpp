@@ -16,6 +16,11 @@ struct Particle {
   double favg[3];
   double omega[3];
   double torque[3];
+  enum ParticleStatus {
+    PARTICLE_OK,
+    PARTICLE_DEAD,
+  };
+  ParticleStatus status;
   size_t n;
   bool logging;
   Particle() {
@@ -28,6 +33,7 @@ struct Particle {
       omega[i] = 0;
       torque[i] = 0;
     }
+    status = PARTICLE_OK;
     m = 0;
     r = 0;
     logging = false;
@@ -115,6 +121,7 @@ int main(int argc, char *argv[]) {
   double acc_freq;
   for (int i = 0; i < 3; i++) acc_vec[i] = 0.0;
   acc_freq = 0.0;
+
 
   if (argc < 1 || argc > 2) {
     printf("Syntax: simplepart config.xml\n");
@@ -282,6 +289,8 @@ int main(int argc, char *argv[]) {
       }
 
       for (Particles::iterator p = particles.begin(); p != particles.end(); p++) {
+        // skip dead particles
+        if (p->status == Particle::PARTICLE_DEAD) continue;
         if (phase == 2) {
           p->f[0] = 0;
           p->f[1] = 0;
@@ -387,6 +396,15 @@ int main(int argc, char *argv[]) {
       fprintf(logging_f, "\n");
     }
     for (Particles::iterator p = particles.begin(); p != particles.end(); p++) {
+      // skip dead particles
+      if (p->status == Particle::PARTICLE_DEAD) continue;
+      // check if particle positions is nan
+      for (int i=0; i<3; i++) {
+        if (isnan(p->f[i])) {
+//          printf("f[%d] is NaN\n", i);
+          p->status = Particle::PARTICLE_DEAD;
+        }
+      }
       for (int i=0; i<3; i++) p->favg[i] = p->favg[i] + p->f[i];
       if (p->m > 0.0) {
         for (int i=0; i<3; i++) p->v[i] = p->v[i] + p->f[i] / p->m * dt;
