@@ -484,49 +484,47 @@ CudaDeviceFunction void CalcFSubGrid() {
     ?>
 
     for (auto p : SyncParticleIterator(X,Y,Z)) {
-
-        bool found_on_boundary = false;
-        if (((NodeType & NODE_BOUNDARY) == NODE_Wall) || ((NodeType & NODE_BOUNDARY) == NODE_Solid)) {
-            // might not work in case of many particles
-            bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
-            if (owned_by_cell) {
-                real_t wrong_value = nanf("");
-                vector_t nan_vec = {wrong_value, wrong_value, wrong_value};
-                p.applyForce(nan_vec);
+        // if particle can be shared etween two cells
+        // can't apply this approach
+        bool is_subgrid_particle =  p.rad <= 0.5;
+        // apply subgrid forcing model
+        if (is_subgrid_particle) {
+            bool found_on_boundary = false;
+            if (((NodeType & NODE_BOUNDARY) == NODE_Wall) || ((NodeType & NODE_BOUNDARY) == NODE_Solid)) {
+                // might not work in case of many particles
+                bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
+                if (owned_by_cell) {
+                    real_t wrong_value = nanf("");
+                    vector_t nan_vec = {wrong_value, wrong_value, wrong_value};
+                    p.applyForce(nan_vec);
+                }
             }
-        }
-        // no need to apply any other forces
-        if (found_on_boundary) continue;
-        real_t dist = sqrt(p.diff.x*p.diff.x + p.diff.y*p.diff.y + p.diff.z*p.diff.z);
+            // no need to apply any other forces
+            if (found_on_boundary) continue;
+            real_t dist = sqrt(p.diff.x*p.diff.x + p.diff.y*p.diff.y + p.diff.z*p.diff.z);
+            bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
 
-        real_t tol = 1e-10;
-        // if particle is within boundaries of the node
-        bool fully_inside_cell = ( ( p.diff.x + p.rad <= (0.5 + tol)) && (p.diff.x - p.rad >= - (0.5 + tol)) \
-                                   && ( p.diff.y + p.rad <= (0.5 + tol)) && (p.diff.y - p.rad >= -(0.5 + tol)) \
-                                   && ( p.diff.z + p.rad <= (0.5 + tol ))  && (p.diff.z - p.rad >= - (0.5 + tol)) );
+            if (owned_by_cell) {
+                vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
+                vector_t u_flow = {u[0], u[1], u[2]};
 
-        bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
+                vector_t u_diff;
+                u_diff.x = u_particle.x - u_flow.x;
+                u_diff.y = u_particle.y - u_flow.y;
+                u_diff.z = u_particle.z - u_flow.z;
 
-        if (owned_by_cell) {
-            vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
-            vector_t u_flow = {u[0], u[1], u[2]};
+                vector_t force;
+                real_t u_diff_mag = sqrt(u_diff.x*u_diff.x + u_diff.y*u_diff.y + u_diff.z*u_diff.z);
 
-            vector_t u_diff;
-            u_diff.x = u_particle.x - u_flow.x;
-            u_diff.y = u_particle.y - u_flow.y;
-            u_diff.z = u_particle.z - u_flow.z;
+                real_t nu_app = (omegaF-0.5)/3.0;
+                real_t Re = u_diff_mag * (2*p.rad) / nu_app;
+                real_t drag_coeff = 1 + 0.15*pow(Re, 0.687);
 
-            vector_t force;
-            real_t u_diff_mag = sqrt(u_diff.x*u_diff.x + u_diff.y*u_diff.y + u_diff.z*u_diff.z);
-
-            real_t nu_app = (omegaF-0.5)/3.0;
-            real_t Re = u_diff_mag * (2*p.rad) / nu_app;
-            real_t drag_coeff = 1 + 0.15*pow(Re, 0.687);
-
-            force.x = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.x * drag_coeff;
-            force.y = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.y * drag_coeff;
-            force.z = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.z * drag_coeff;
-            p.applyForce(force);
+                force.x = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.x * drag_coeff;
+                force.y = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.y * drag_coeff;
+                force.z = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.z * drag_coeff;
+                p.applyForce(force);
+            }
         }
     }
 }
