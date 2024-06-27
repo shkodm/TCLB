@@ -199,15 +199,6 @@ CudaDeviceFunction void BounceBack() {
     real_t uf, uT;
     #define dump 1
 
-    // apply force to particles in the cell and make them NAN
-    // to signal particle hitting a wall
-	for (auto p : SyncParticleIterator(X,Y,Z)) {
-        bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
-        if (owned_by_cell) {
-            vector_t nan_vec = {NAN, NAN, NAN};
-            p.applyForce(nan_vec);
-        }
-    }
 
 <?R
     uT = PV("uT")
@@ -492,15 +483,27 @@ CudaDeviceFunction void CalcFSubGrid() {
         C( u, f %*% U * Rho^{-1} + a*0.5 )
     ?>
 
-	for (auto p : SyncParticleIterator(X,Y,Z)) {
+    for (auto p : SyncParticleIterator(X,Y,Z)) {
 
+        bool found_on_boundary = false;
+        if (((NodeType & NODE_BOUNDARY) == NODE_Wall) || ((NodeType & NODE_BOUNDARY) == NODE_Solid)) {
+            // might not work in case of many particles
+            bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
+            if (owned_by_cell) {
+                real_t wrong_value = nanf("");
+                vector_t nan_vec = {wrong_value, wrong_value, wrong_value};
+                p.applyForce(nan_vec);
+            }
+        }
+        // no need to apply any other forces
+        if (found_on_boundary) continue;
         real_t dist = sqrt(p.diff.x*p.diff.x + p.diff.y*p.diff.y + p.diff.z*p.diff.z);
 
         real_t tol = 1e-10;
         // if particle is within boundaries of the node
         bool fully_inside_cell = ( ( p.diff.x + p.rad <= (0.5 + tol)) && (p.diff.x - p.rad >= - (0.5 + tol)) \
-                                    && ( p.diff.y + p.rad <= (0.5 + tol)) && (p.diff.y - p.rad >= -(0.5 + tol)) \
-                                    && ( p.diff.z + p.rad <= (0.5 + tol ))  && (p.diff.z - p.rad >= - (0.5 + tol)) );
+                                   && ( p.diff.y + p.rad <= (0.5 + tol)) && (p.diff.y - p.rad >= -(0.5 + tol)) \
+                                   && ( p.diff.z + p.rad <= (0.5 + tol ))  && (p.diff.z - p.rad >= - (0.5 + tol)) );
 
         bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
 
@@ -523,7 +526,6 @@ CudaDeviceFunction void CalcFSubGrid() {
             force.x = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.x * drag_coeff;
             force.y = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.y * drag_coeff;
             force.z = - 3*PI * (p.rad*2)*nu_app* Rho*u_diff.z * drag_coeff;
-
             p.applyForce(force);
         }
     }

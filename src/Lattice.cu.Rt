@@ -424,14 +424,13 @@ void Lattice::CopyOutParticles() {
 				for (size_t i=0; i<RFI.size(); i++){
 					if (! isfinite(RFI.RawData(i,RFI_DATA_FORCE+j))) {
 						nans++;
-						RFI.RawData(i,RFI_DATA_FORCE+j) = 0.0;
 					}
 				}
 			} else {
 				for (size_t i=0; i<RFI.size(); i++) RFI.RawData(i,RFI_DATA_FORCE+j) = 0.0;
 			}
 		}
-		if (nans > 0) notice("%d NANs in particle forces (overwritten with 0.0)\n", nans);
+	if (nans > 0) notice("%d NANs in particle forces (kept)\n", nans);
 	DEBUG_PROF_POP();
 	RFI.SendForces();
 }

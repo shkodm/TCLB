@@ -396,15 +396,15 @@ int main(int argc, char *argv[]) {
       fprintf(logging_f, "\n");
     }
     for (Particles::iterator p = particles.begin(); p != particles.end(); p++) {
-      // skip dead particles
-      if (p->status == Particle::PARTICLE_DEAD) continue;
-      // check if particle positions is nan
+      // check if particle positions is nan -> the it
+      // is dead (e.g. hit the wall)
       for (int i=0; i<3; i++) {
         if (isnan(p->f[i])) {
-//          printf("f[%d] is NaN\n", i);
           p->status = Particle::PARTICLE_DEAD;
         }
       }
+      // skip dead particles
+      if (p->status == Particle::PARTICLE_DEAD) continue;
       for (int i=0; i<3; i++) p->favg[i] = p->favg[i] + p->f[i];
       if (p->m > 0.0) {
         for (int i=0; i<3; i++) p->v[i] = p->v[i] + p->f[i] / p->m * dt;
