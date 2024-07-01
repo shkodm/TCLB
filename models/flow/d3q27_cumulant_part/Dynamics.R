@@ -24,6 +24,16 @@ AddDensity( name="fy",  group="Force", parameter=TRUE)
 AddDensity( name="fz",  group="Force", parameter=TRUE)
 AddDensity( name="sol", group="Force", parameter=TRUE)
 
+extra_field_group_load = c()
+extra_field_group_save = c()
+
+if (Options$INTU) {
+	AddField("Ux", stencil3d=1, group="vel")
+	AddField("Uy", stencil3d=1, group="vel")
+	AddField("Uz", stencil3d=1, group="vel")
+	extra_fields_load = c(extra_fields_load, "vel")
+	extra_fields_save = c(extra_fields_save, "vel")
+}
 
 AddQuantity(name="P",unit="Pa")
 AddQuantity(name="U",unit="m/s",vector=T)
@@ -91,11 +101,12 @@ AddField(name="avgUZ",dz=c(1,-1),average=TRUE)
 }
 
 
-AddStage("BaseIteration", "Run", save=Fields$group %in% c("f","Force"), load = DensityAll$group %in% c("f","Force"))
+AddStage("BaseIteration", "Run", save=Fields$group %in% c("f","Force", extra_field_group_save), load = DensityAll$group %in% c("f","Force", extra_field_group_load))
 AddStage("CalcF", save=Fields$group == "Force", load = DensityAll$group %in% c("f","Force"), particle=TRUE)
+AddStage("CalcU", save=Fields$group == extra_field_group_save, load = DensityAll$group %in% c("f", "Force", extra_field_group_load))
 
-AddAction("Iteration", c("BaseIteration", "CalcF"))
-AddAction("Init", c("BaseInit", "CalcF"))
+AddAction("Iteration", c("BaseIteration", "CalcU"))
+AddAction("Init", c("BaseInit", "CalcF", "CalcU"))
 
 AddNodeType(name="EPressure", group="BOUNDARY")
 AddNodeType(name="EVelocity", group="BOUNDARY")
