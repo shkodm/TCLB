@@ -34,7 +34,6 @@ CudaDeviceFunction void CalcF(){
         // apply subgrid forcing model
         if (is_subgrid_particle) {
             bool found_on_boundary = false;
-            // might have to add checking for pressure here
             if ((NodeType & NODE_BOUNDARY) == NODE_Wall) {
                 // might not work in case of many particles
                 bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
@@ -50,22 +49,7 @@ CudaDeviceFunction void CalcF(){
             bool owned_by_cell = floor(p.pos.x) == floor(X) && floor(p.pos.y) == floor(Y) && floor(p.pos.z) == floor(Z);
 
             if (owned_by_cell) {
-
-
-#ifndef OPTIONS_INTU
                 vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
-#else
-                // do the interpolation
-                // get the distance
-                // p.diff.x, p.diff.y, p.diff.z are basically the coordinates
-                // of the particle in the cell with the center of the cell being 0,0,0
-                // and cell size being 2, 2, 2 and distances to other nodes
-                // are 1, 1, 1
-                // The access toall the cells should be uniform (not dynamic)
-                // and this interpolation should be implemented probably
-                // https://en.wikipedia.org/wiki/Trilinear_interpolation
-                vector_t u_particle = {p.cvel.x, p.cvel.y, p.cvel.z};
-#endif
 
                 vector_t u_diff;
                 u_diff.x = u_particle.x - u.x;
@@ -135,19 +119,10 @@ CudaDeviceFunction vector_t getU_(){
         return u;
 }
 
-CudaDeviceFunction void CalcU() {
-        real_t d = getRho();
-        vector_t u;
-        u = getU_();
-        Ux = u.x;
-        Uy = u.y;
-        Uz = u.z;
-}
-
-
 CudaDeviceFunction vector_t getU(){
-    RunBoundaries();
+	RunBoundaries();
 	return getU_();
+
 }
 
 CudaDeviceFunction vector_t getF(){
