@@ -271,6 +271,10 @@ public:
 			return ret;
 		}
 
+       if (name == "MPI_COMM") {
+         return Rcpp::wrap((int)MPI_Comm_c2f(MPMD.local));
+       }
+
 		bool si = false;
 		std::string glob = name;
 		size_t last_index = name.find_last_not_of(".");
@@ -295,6 +299,7 @@ public:
 	Rcpp::CharacterVector Names() {
 		Rcpp::CharacterVector ret;
 		ret.push_back("Iteration");
+        ret.push_back("MPI_COMM");
 		for (const Model::Global& it : solver->lattice->model->globals) {
 			if (it.isAdjoint) continue;
 			ret.push_back(it.name);
