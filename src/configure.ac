@@ -770,9 +770,11 @@ then
 			AC_MSG_RESULT([no])
 		fi
 	else
-		function clean_options {
-			sed 's/"//g'   # For some reason Rcpp prints the "-I" option with quotations
-		}
+        clean_options() {
+            # crayblas warning on setonix R... 
+            # https://pawsey.atlassian.net/wiki/spaces/US/pages/716505127/CRAYBLAS_WARNING+Application+linked+against+multiple+cray-libsci+libraries
+            sed -e 's/"//g' -e 's/\@<:@CRAYBLAS_WARNING.*libraries//g'
+        }
 		CPPFLAGS="${CPPFLAGS} $($R_BIN CMD config --cppflags | clean_options)"
 		CPPFLAGS="${CPPFLAGS} $($R_BIN --vanilla --slave -e 'RInside:::CxxFlags()' | clean_options)"
 		CPPFLAGS="${CPPFLAGS} $($R_BIN --vanilla --slave -e 'Rcpp:::CxxFlags()' | clean_options)"
