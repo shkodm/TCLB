@@ -980,33 +980,28 @@ CudaDeviceFunction void Init_real_wallNorm()
 	  	real_t tmp = 0.0;
         real_t PhaseF_tmp[3][3][3];
 
-        // find in which direction to do reflection
-        // mirror in the beginning, in case of non-periodic boundaries,
-        // so we don't accidentally take the value from the other phase
-        // ===========================================================
-        // NOTE: Works only in X direction. To use pressure/velocity
-        // bondaries in other directions need to mark the boundaries
-        // with symmetry market, otherwise wall gradients might point
-        // to the other side. (I.e. SymmetryX_plus at the same location
-        // as EPressure, etc)
-        // NOTE: Would not work on the arbitrary grid, and with the
-        // develop branch, need to mark with symmetry
-        // int nx = constContainer.nx;
-        // for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
-        //    if ((InvasionDrainage > 0) && (i == -1) && (X == 0.5)) {
-        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
-        //    }
-        //    else if ((InvasionDrainage > 0) && (i == 1) && (X == nx - 0.5)) {
-        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
-        //    }
-        //    else {
-        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(i,j,k);
-        //    }
-        // }}
-        // }
-	  	for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
-			tmp += PhaseF_tmp[i+1][j+1][k + 1];
-	  	}}}
+        // Mirror PhaseF in the direction of the boundary normal for
+        // pressure/velocity boundaries, so that the wall normal
+        // computation does not reach across the boundary and pick up
+        // wrong phase field values from the other side.
+        auto boundary_marker = NodeType & NODE_BOUNDARY;
+        for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
+            int mi = i, mj = j, mk = k;
+            // this shit should be improved somehow
+            <?R
+                for (bc in rows(my_boundaries)) {
+                    n = my_normal_directions[bc$side,]
+                    axis_idx = which(n != 0)
+                    axis_var = c("i", "j", "k")[axis_idx]
+                    axis_val = n[axis_idx]
+            ?>
+            if (boundary_marker == NODE_<?%s bc$name ?> && <?%s axis_var ?> == <?%d axis_val ?>) {
+                m<?%s axis_var ?> = -<?%s axis_var ?>;
+            }
+            <?R } ?>
+            PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(mi, mj, mk);
+            tmp += PhaseF_tmp[i+1][j+1][k+1];
+        }}}
 
 	  	if (abs(tmp) > 26000) {
 			// I am surrounded by all solid nodes (sum(pf) = 27*-999 = -26973 if surrounded):
