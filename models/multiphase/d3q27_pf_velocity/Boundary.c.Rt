@@ -989,19 +989,21 @@ CudaDeviceFunction void Init_real_wallNorm()
         // with symmetry market, otherwise wall gradients might point
         // to the other side. (I.e. SymmetryX_plus at the same location
         // as EPressure, etc)
-        int nx = constContainer.nx;
-        for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
-            if ((InvasionDrainage > 0) && (i == -1) && (X == 0.5)) {
-                PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
-            }
-            else if ((InvasionDrainage > 0) && (i == 1) && (X == nx - 0.5)) {
-                PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
-            }
-            else {
-                PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(i,j,k);
-            }
-        }}
-        }
+        // NOTE: Would not work on the arbitrary grid, and with the
+        // develop branch, need to mark with symmetry
+        // int nx = constContainer.nx;
+        // for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
+        //    if ((InvasionDrainage > 0) && (i == -1) && (X == 0.5)) {
+        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
+        //    }
+        //    else if ((InvasionDrainage > 0) && (i == 1) && (X == nx - 0.5)) {
+        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(-i,j,k);
+        //    }
+        //    else {
+        //        PhaseF_tmp[i+1][j+1][k+1] = PhaseF_dyn(i,j,k);
+        //    }
+        // }}
+        // }
 	  	for (i=-1;i<2;i++){for (j=-1;j<2;j++){for (k=-1;k<2;k++){
 			tmp += PhaseF_tmp[i+1][j+1][k + 1];
 	  	}}}
