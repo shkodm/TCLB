@@ -157,6 +157,32 @@ CudaDeviceFunction vector_t calcGradPhi()
             gradPhi.z = 0.0;
         }
 	#endif
+
+    // thanks Travis
+    // https://github.com/TravisMitchell/TCLB/commit/71a24de71b07bab219cc82154fcf10019565a821
+    if (isnan(gradPhi.x) || isnan(gradPhi.y) || isnan(gradPhi.z)) {
+        // use weighted average to cater for boundaries
+        gradPhi.x = 0.0;
+        gradPhi.y = 0.0;
+        gradPhi.z = 0.0;
+
+        real_t phi_a = PhaseF(0,0,0);
+        real_t phi_b, denom = 0.0;
+
+        for (int i = 0; i<27; i++){
+            phi_b = PhaseF_dyn(d3q27_ex[i],d3q27_ey[i],d3q27_ez[i]);
+            if (!isnan(phi_b)){
+                gradPhi.x += wg[i]*d3q27_ex[i]*(phi_b - phi_a);
+                gradPhi.y += wg[i]*d3q27_ey[i]*(phi_b - phi_a);
+                gradPhi.z += wg[i]*d3q27_ez[i]*(phi_b - phi_a);
+                denom += wg[i]; 
+            }
+        }
+        gradPhi.x = gradPhi.x/denom/cs2;
+        gradPhi.y = gradPhi.y/denom/cs2;
+        gradPhi.z = gradPhi.z/denom/cs2;
+    }
+        
 	return gradPhi;
 }
 
@@ -235,6 +261,9 @@ CudaDeviceFunction real_t calcMu(real_t C)
 		mu = 4.0*(12.0*SurfaceTension(0,0,0)/IntWidth)*(C-PhaseField_l)*(C-PhaseField_h)*(C-pfavg)
 			- (1.5 *SurfaceTension(0,0,0)*IntWidth) * lpPhi;
 	#else
+        if (IamWall || IamSolid) {
+			lpPhi = 0.0;
+		}
 
         auto boundary_marker = NodeType & NODE_BOUNDARY;
         <?R condition = paste(paste0("boundary_marker == NODE_", my_boundaries$name, collapse = ' || ')) ?>
