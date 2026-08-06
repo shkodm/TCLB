@@ -5,13 +5,13 @@ class Solver;
 
 namespace CatalystAdaptor
 {
-  void Initialize(bool exportCellData);
-  void AddScript(const char * script);
+  int Initialize(bool exportCellData);
+  int AddScript(const char * script);
   
-  void Finalize();
+  int Finalize();
 
-  void CoProcess(Solver& grid, double time,
-                 unsigned int timeStep, bool lastTimeStep);
+  int CoProcess(Solver& grid, double time,
+                unsigned int timeStep, bool lastTimeStep);
 }
 
 #endif

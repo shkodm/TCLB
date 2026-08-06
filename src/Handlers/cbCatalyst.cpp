@@ -23,7 +23,8 @@ int cbCatalyst::Init () {
                         }
                 }
 		if (script_number == 0) {
-		        CatalystAdaptor::Initialize(cellDataNew);
+		        if (CatalystAdaptor::Initialize(cellDataNew) != 0)
+		                return -1;
 		        cellData = cellDataNew;
                 } else {
                         if (cellData != cellDataNew) {
@@ -82,22 +83,19 @@ int cbCatalyst::Init () {
 //                } else {
 //                        s.add_from_string("all",',');
 //                }
-                CatalystAdaptor::AddScript(nm.c_str());
-		return 0;
+		return CatalystAdaptor::AddScript(nm.c_str());
 	}
 
 
 int cbCatalyst::DoIt () {
 		Callback::DoIt();
 		solver->print("running Catalyst");
-		CatalystAdaptor::CoProcess(*solver, solver->iter, solver->iter, 0);
-		return 0;
+		return CatalystAdaptor::CoProcess(*solver, solver->iter, solver->iter, 0);
 	};
 
 
 int cbCatalyst::Finish () {
-	        CatalystAdaptor::Finalize();
-	        return 0;
+	        return CatalystAdaptor::Finalize();
 	};
 
 int cbCatalyst::script_number = 0;

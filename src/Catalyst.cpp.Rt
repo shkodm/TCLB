@@ -3,327 +3,301 @@
   c_header();
 ?>
 
-#include <iostream>
 #include "Catalyst.h"
+#include "Global.h"
 #include "Solver.h"
 
-#include <vtkCellData.h>
-#include <vtkCellType.h>
-#include <vtkCPDataDescription.h>
-#include <vtkCPInputDataDescription.h>
-#include <vtkCPProcessor.h>
-#include <vtkCPPythonScriptPipeline.h>
-#include <vtkDoubleArray.h>
-#include <vtkFloatArray.h>
-#include <vtkUnsignedCharArray.h>
-#include <vtkUnsignedIntArray.h>
-#include <vtkImageData.h>
-#include <vtkNew.h>
-#include <vtkPoints.h>
-#include <vtkPointData.h>
+#include <catalyst.hpp>
 
-#ifdef CALC_DOUBLE_PRECISION
-  typedef vtkDoubleArray vtkRealTArray;
-#else
-  typedef vtkFloatArray vtkRealTArray;
-#endif
-
-typedef vtkUnsignedIntArray vtkFlagTArray;
-typedef vtkUnsignedCharArray vtkGeomTArray;              
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
 
 namespace
 {
-  vtkCPProcessor* Processor = NULL;
-  vtkImageData* VTKGrid = NULL;
-  bool exportCellData;
-  int extent[6];
-  int wholeExtent[6];
-  lbRegion reg;
-  
-  void BuildVTKGrid(Solver& solver)
+  bool ExportCellData = true;
+  bool CatalystInitialized = false;
+  std::vector<std::string> CatalystScripts;
+
+  struct CatalystMeshBuffers
   {
-    // The grid structure isn't changing so we only build it
-    // the first time it's needed. If we needed the memory
-    // we could delete it and rebuild as necessary.
-    if(VTKGrid == NULL)
-      {
-      VTKGrid = vtkImageData::New();
-      extent[0] = solver.lattice->region.dx;
-      extent[1] = solver.lattice->region.dx + solver.lattice->region.nx;
-      extent[2] = solver.lattice->region.dy;
-      extent[3] = solver.lattice->region.dy + solver.lattice->region.ny;
-      extent[4] = solver.lattice->region.dz;
-      extent[5] = solver.lattice->region.dz + solver.lattice->region.nz;
-      wholeExtent[0] = solver.lattice->mpi.totalregion.dx;
-      wholeExtent[1] = solver.lattice->mpi.totalregion.dx + solver.lattice->mpi.totalregion.nx;
-      wholeExtent[2] = solver.lattice->mpi.totalregion.dy;
-      wholeExtent[3] = solver.lattice->mpi.totalregion.dy + solver.lattice->mpi.totalregion.ny;
-      wholeExtent[4] = solver.lattice->mpi.totalregion.dz;
-      wholeExtent[5] = solver.lattice->mpi.totalregion.dz + solver.lattice->mpi.totalregion.nz;
-      if (! exportCellData) {
-        if (extent[1] == wholeExtent[1]) extent[1]--;
-        wholeExtent[1]--;
-        if (extent[3] == wholeExtent[3]) extent[3]--;
-        wholeExtent[3]--;
-        if (extent[5] == wholeExtent[5]) extent[5]--;
-        wholeExtent[5]--;
-      }
-      reg.dx = extent[0];
-      reg.nx = extent[1]-extent[0];
-      reg.dy = extent[2];
-      reg.ny = extent[3]-extent[2];
-      reg.dz = extent[4];
-      reg.nz = extent[5]-extent[4];
-      if (! exportCellData) {
-        reg.nx++;
-        reg.ny++;
-        reg.nz++;
-      }
-      VTKGrid->SetExtent(extent);
-      double spacing[3];
-      spacing[0] = spacing[1] = spacing[2] = 1/solver.units.alt("m");
-      VTKGrid->SetSpacing(spacing);
-      }
-  }
+    std::vector<unsigned int> flag;
 
-  void fixPointData(lbRegion& old, lbRegion& reg, void* data_, int element_size) {
-        int old_change = -1;
-        int chunk = 0;
-        int ind=0, ind2=0;
-        char * data = (char*) data_;
-        element_size = element_size / sizeof(char); // Just to be on the safe side
-        for (int z=old.dz+old.nz; z>old.dz; z--) {
-          for (int y=old.dy+old.ny; y>old.dy; y--) {
-            for (int x=old.dx+old.nx; x>old.dx; x--) {
-              int change = reg.offset(x-1,y-1,z-1) - old.offset(x-1,y-1,z-1);
-              if (change != old_change) {
-                if (old_change != -1) {
-                  debug0("moving chunk of size %d from %d to %d\n", chunk, ind, ind2);
-                  memmove(data + ind2*element_size, data + ind*element_size, chunk*element_size);
-                }
-                old_change = change;
-                chunk = 0;
-              }
-              ind  = old.offset(x-1,y-1,z-1);
-              ind2 = reg.offset(x-1,y-1,z-1);
-              chunk++;
-            }
-          }
-        }
-        if (old_change != 0) {
-          error("while moving data for PointData output something went wrong");
-        }
-
-  }
-
-  void UpdateVTKAttributes(Solver& solver)
-  {
-    vtkIdType numberOf;
-    if (exportCellData) {
-      numberOf = VTKGrid->GetCellData()->GetNumberOfArrays();
-    } else {
-      numberOf = VTKGrid->GetPointData()->GetNumberOfArrays();
-    }        
-    if(numberOf == 0)
-    {
-      debug2("Creating Catalyst VTK objects\n");
-      
-      debug1("Creating Catalyst VTK object for flag");
-      vtkIdType size = static_cast<vtkIdType> (reg.size());
-      vtkNew<vtkFlagTArray> myArray;
-      myArray->SetName("flag");        
-      myArray->SetNumberOfComponents(1);
-      myArray->SetNumberOfValues(size);
-      if (exportCellData) {
-        VTKGrid->GetCellData()->AddArray(myArray.GetPointer());
-      } else {
-        VTKGrid->GetPointData()->AddArray(myArray.GetPointer());
-      }        
-
-      <?R
-      i = !duplicated(NodeTypes$group)
-      for (n in rows(NodeTypes[i,])) { ?>
-      { 
-        debug1("Creating Catalyst VTK object for <?%s n$group ?>\n");
-        vtkIdType size = static_cast<vtkIdType> (reg.size());
-        vtkNew<vtkGeomTArray> myArray;
-        myArray->SetName("<?%s n$group ?>");
-        myArray->SetNumberOfComponents(1);
-        myArray->SetNumberOfValues(size);
-        if (exportCellData) {
-          VTKGrid->GetCellData()->AddArray(myArray.GetPointer());
-        } else {
-          VTKGrid->GetPointData()->AddArray(myArray.GetPointer());
-        }  
-      }   <?R } ?>
-      
-      <?R for (q in rows(Quantities)) { ifdef(q$adjoint); ?>
-      { 
-        debug1("Creating Catalyst VTK object for <?%s q$name ?>\n");
-        vtkIdType size = static_cast<vtkIdType> (reg.size());
-        vtkNew<vtkRealTArray> myArray;
-        myArray->SetName("<?%s q$name ?>");
-        <?R if (q$vector) { ?>
-        myArray->SetNumberOfComponents(3);
-        myArray->SetNumberOfTuples(size);
-        <?R } else { ?>
-        myArray->SetNumberOfComponents(1);
-        myArray->SetNumberOfValues(size);
-        <?R } ?>
-        if (exportCellData) {
-          VTKGrid->GetCellData()->AddArray(myArray.GetPointer());
-        } else {
-          VTKGrid->GetPointData()->AddArray(myArray.GetPointer());
-        }        
-      }
-      <?R };	ifdef(); ?>
-
-    }
-
-    debug2("Filling Catalyst VTK object for flag\n");
-    vtkIdType size = reg.size();
-    vtkFlagTArray* myArray;
-    if (exportCellData) {
-      myArray = vtkFlagTArray::SafeDownCast(VTKGrid->GetCellData()->GetArray("flag"));
-    } else {
-      myArray = vtkFlagTArray::SafeDownCast(VTKGrid->GetPointData()->GetArray("flag"));
-    }      
-    unsigned int * myArrayData = myArray->WritePointer(0,size);
-    flag_t * NodeType = new flag_t[size];
-    solver.lattice->GetFlags(reg, NodeType);
-    
-    for (size_t i=0;i<size;i++) {
-      myArrayData[i] = (unsigned int) NodeType[i];
-    }
-
-    lbRegion old = solver.lattice->region;      
-    if (! exportCellData) {
-      fixPointData(old, reg, myArrayData, sizeof(real_t));
-    }      
-
-    unsigned char * small = new unsigned char[size];
     <?R
     i = !duplicated(NodeTypes$group)
-    for (n in rows(NodeTypes[i,]))  { ?> 
-    { 
-      debug2("Filling Catalyst VTK object for <?%s n$group ?>\n");
-      vtkIdType size = reg.size();
-      vtkGeomTArray* myArray;
-      if (exportCellData) {
-        myArray = vtkGeomTArray::SafeDownCast(VTKGrid->GetCellData()->GetArray("<?%s n$group ?>"));
-      } else {
-        myArray = vtkGeomTArray::SafeDownCast(VTKGrid->GetPointData()->GetArray("<?%s n$group ?>"));
-      }      
-      unsigned char * myArrayData = myArray->WritePointer(0,size);
-      for (size_t i=0;i<size;i++) {
-          myArrayData[i] = (unsigned char) (NodeType[i] & NODE_<?%s n$group ?>) >> <?%d n$shift ?>; 
-      }
-      
-      lbRegion old = solver.lattice->region;      
-      if (! exportCellData) {
-        fixPointData(old, reg, myArrayData, sizeof(real_t));
-      }      
-    } <?R } ?>
-    delete[] small;
-    delete[] NodeType;
+    for (n in rows(NodeTypes[i,])) { ?>
+    std::vector<unsigned char> geometry_<?%s n$group ?>;
+    <?R } ?>
 
     <?R for (q in rows(Quantities)) { ifdef(q$adjoint); ?>
-    {
-      debug2("Filling Catalyst VTK object for <?%s q$name ?>\n");
-      vtkIdType size = reg.size();
-      vtkRealTArray* myArray;
-      if (exportCellData) {
-        myArray = vtkRealTArray::SafeDownCast(VTKGrid->GetCellData()->GetArray("<?%s q$name ?>"));
-      } else {
-        myArray = vtkRealTArray::SafeDownCast(VTKGrid->GetPointData()->GetArray("<?%s q$name ?>"));
-      }      
-      vtkIdType numTuples = myArray->GetNumberOfComponents();
-      real_t * myArrayData = myArray->WritePointer(0,size * numTuples);
-      double myUnit = solver.units.alt("<?%s q$unit ?>");
-      lbRegion old = solver.lattice->region;      
-      solver.lattice->Get<?%s q$name ?>(old, (<?%s q$type ?>*)(myArrayData), 1/myUnit);
-      
-      if (! exportCellData) {
-        fixPointData(old, reg, myArrayData, sizeof(<?%s q$type ?>));
-      }      
-//      solver.lattice->Get<?%s q$name ?>(reg, (<?%s q$type ?>*)(myArrayData), 1/myUnit);
-    }
+    std::vector<<?%s q$type ?>> quantity_<?%s q$name ?>;
     <?R }; ifdef(); ?>
+  };
+
+  int CheckCatalystStatus(catalyst_status status, const char* operation)
+  {
+    if (status == catalyst_status_ok)
+      return 0;
+
+    error("Catalyst 2 %s failed with status %d\n", operation,
+          static_cast<int>(status));
+    return -1;
   }
 
-  void BuildVTKDataStructures(Solver& solver)
+  lbRegion GetCatalystRegion(Solver& solver)
   {
-    BuildVTKGrid(solver);
-    UpdateVTKAttributes(solver);
+    lbRegion result = solver.lattice->region;
+
+    // TCLB's PointData representation needs the high-side point owned by the
+    // neighbouring rank. Preserve the legacy adaptor's extent convention.
+    if (!ExportCellData)
+    {
+      const lbRegion& total = solver.lattice->mpi.totalregion;
+      if (result.dx + result.nx != total.dx + total.nx) result.nx++;
+      if (result.dy + result.ny != total.dy + total.ny) result.ny++;
+      if (result.dz + result.nz != total.dz + total.nz) result.nz++;
+    }
+
+    return result;
+  }
+
+  void ExpandPointData(lbRegion oldRegion, lbRegion newRegion,
+                       void* data_, std::size_t elementSize)
+  {
+    int oldChange = -1;
+    int chunk = 0;
+    int sourceIndex = 0;
+    int destinationIndex = 0;
+    char* data = static_cast<char*>(data_);
+
+    for (int z = oldRegion.dz + oldRegion.nz; z > oldRegion.dz; --z)
+    {
+      for (int y = oldRegion.dy + oldRegion.ny; y > oldRegion.dy; --y)
+      {
+        for (int x = oldRegion.dx + oldRegion.nx; x > oldRegion.dx; --x)
+        {
+          const int change = newRegion.offset(x - 1, y - 1, z - 1) -
+                             oldRegion.offset(x - 1, y - 1, z - 1);
+          if (change != oldChange)
+          {
+            if (oldChange != -1)
+            {
+              std::memmove(data + destinationIndex * elementSize,
+                           data + sourceIndex * elementSize,
+                           chunk * elementSize);
+            }
+            oldChange = change;
+            chunk = 0;
+          }
+          sourceIndex = oldRegion.offset(x - 1, y - 1, z - 1);
+          destinationIndex = newRegion.offset(x - 1, y - 1, z - 1);
+          ++chunk;
+        }
+      }
+    }
+
+    if (oldChange != 0)
+      error("while expanding data for Catalyst PointData output something went wrong\n");
+  }
+
+  template <typename ValueType>
+  void SetScalarField(conduit_cpp::Node& fields, const char* name,
+                      ValueType* values, std::size_t size)
+  {
+    auto field = fields[name];
+    field["association"].set(ExportCellData ? "element" : "vertex");
+    field["topology"].set("mesh");
+    field["volume_dependent"].set("false");
+    field["values"].set_external(values, size);
+  }
+
+  template <typename VectorType>
+  void SetVectorField(conduit_cpp::Node& fields, const char* name,
+                      VectorType* values, std::size_t size)
+  {
+    auto field = fields[name];
+    field["association"].set(ExportCellData ? "element" : "vertex");
+    field["topology"].set("mesh");
+    field["volume_dependent"].set("false");
+    field["values/x"].set_external(&values[0].x, size, 0, sizeof(VectorType));
+    field["values/y"].set_external(&values[0].y, size, 0, sizeof(VectorType));
+    field["values/z"].set_external(&values[0].z, size, 0, sizeof(VectorType));
+  }
+
+  int EnsureCatalystInitialized()
+  {
+    if (CatalystInitialized)
+      return 0;
+
+    if (CatalystScripts.empty())
+    {
+      error("No scripts provided for Catalyst 2 initialization\n");
+      return -1;
+    }
+
+    conduit_cpp::Node params;
+    for (std::size_t index = 0; index < CatalystScripts.size(); ++index)
+    {
+      const std::string path = "catalyst/scripts/script" +
+                               std::to_string(index) + "/filename";
+      params[path].set_string(CatalystScripts[index]);
+    }
+
+    // ParaView Catalyst expects the Fortran handle when a non-default
+    // communicator is supplied.
+    params["catalyst/mpi_comm"].set(
+      static_cast<std::int64_t>(MPI_Comm_c2f(MPMD.local)));
+
+    notice("Initializing Catalyst 2 with %d script(s)\n",
+           static_cast<int>(CatalystScripts.size()));
+    if (CheckCatalystStatus(
+          catalyst_initialize(conduit_cpp::c_node(&params)), "initialize") != 0)
+      return -1;
+
+    CatalystInitialized = true;
+    return 0;
+  }
+
+  void BuildCatalystMesh(Solver& solver, conduit_cpp::Node& mesh,
+                         CatalystMeshBuffers& buffers)
+  {
+    lbRegion oldRegion = solver.lattice->region;
+    lbRegion region = GetCatalystRegion(solver);
+    const std::size_t size = region.size();
+    const double spacing = 1.0 / solver.units.alt("m");
+
+    mesh["state/domain_id"].set(static_cast<std::int64_t>(solver.mpi_rank));
+
+    mesh["coordsets/coords/type"].set("uniform");
+    mesh["coordsets/coords/dims/i"].set(
+      static_cast<std::int64_t>(region.nx + (ExportCellData ? 1 : 0)));
+    mesh["coordsets/coords/dims/j"].set(
+      static_cast<std::int64_t>(region.ny + (ExportCellData ? 1 : 0)));
+    mesh["coordsets/coords/dims/k"].set(
+      static_cast<std::int64_t>(region.nz + (ExportCellData ? 1 : 0)));
+    mesh["coordsets/coords/origin/x"].set(region.dx * spacing);
+    mesh["coordsets/coords/origin/y"].set(region.dy * spacing);
+    mesh["coordsets/coords/origin/z"].set(region.dz * spacing);
+    mesh["coordsets/coords/spacing/dx"].set(spacing);
+    mesh["coordsets/coords/spacing/dy"].set(spacing);
+    mesh["coordsets/coords/spacing/dz"].set(spacing);
+
+    mesh["topologies/mesh/type"].set("uniform");
+    mesh["topologies/mesh/coordset"].set("coords");
+
+    auto fields = mesh["fields"];
+
+    std::vector<flag_t> nodeTypes(size, 0);
+    solver.lattice->GetFlags(region, nodeTypes.data());
+
+    buffers.flag.resize(size, 0);
+    for (std::size_t index = 0; index < size; ++index)
+      buffers.flag[index] = static_cast<unsigned int>(nodeTypes[index]);
+    if (!ExportCellData)
+      ExpandPointData(oldRegion, region, buffers.flag.data(), sizeof(unsigned int));
+    SetScalarField(fields, "flag", buffers.flag.data(), size);
+
+    <?R
+    i = !duplicated(NodeTypes$group)
+    for (n in rows(NodeTypes[i,])) { ?>
+    buffers.geometry_<?%s n$group ?>.resize(size, 0);
+    for (std::size_t index = 0; index < size; ++index)
+    {
+      buffers.geometry_<?%s n$group ?>[index] = static_cast<unsigned char>(
+        (nodeTypes[index] & NODE_<?%s n$group ?>) >> <?%d n$shift ?>);
+    }
+    if (!ExportCellData)
+      ExpandPointData(oldRegion, region,
+                      buffers.geometry_<?%s n$group ?>.data(),
+                      sizeof(unsigned char));
+    SetScalarField(fields, "<?%s n$group ?>",
+                   buffers.geometry_<?%s n$group ?>.data(), size);
+    <?R } ?>
+
+    <?R for (q in rows(Quantities)) { ifdef(q$adjoint); ?>
+    buffers.quantity_<?%s q$name ?>.resize(size);
+    solver.lattice->Get<?%s q$name ?>(
+      oldRegion, buffers.quantity_<?%s q$name ?>.data(),
+      1.0 / solver.units.alt("<?%s q$unit ?>"));
+    if (!ExportCellData)
+      ExpandPointData(oldRegion, region,
+                      buffers.quantity_<?%s q$name ?>.data(),
+                      sizeof(<?%s q$type ?>));
+    <?R if (q$vector) { ?>
+    SetVectorField(fields, "<?%s q$name ?>",
+                   buffers.quantity_<?%s q$name ?>.data(), size);
+    <?R } else { ?>
+    SetScalarField(fields, "<?%s q$name ?>",
+                   buffers.quantity_<?%s q$name ?>.data(), size);
+    <?R } ?>
+    <?R }; ifdef(); ?>
   }
 }
 
 namespace CatalystAdaptor
 {
-
-  void Initialize(bool exportCellData_)
+  int Initialize(bool exportCellData)
   {
-    exportCellData = exportCellData_;
-    if(Processor == NULL)
-      {
-      debug2("Initializing Catalyst coProcessor\n");
-      Processor = vtkCPProcessor::New();
-      Processor->Initialize();
-      }
-    else
-      {
-      debug2("Clearing Catalyst coProcessor\n");
-      Processor->RemoveAllPipelines();
-      }
-  }
-  
-  void AddScript(const char * script)
-  {
-      notice("Adding Catalyst script: %s\n", script);
-      vtkNew<vtkCPPythonScriptPipeline> pipeline;
-      pipeline->Initialize(script);
-      Processor->AddPipeline(pipeline.GetPointer());
-  }
-
-  void Finalize()
-  {
-    if(Processor)
+    if (CatalystInitialized)
     {
-      Processor->Delete();
-      Processor = NULL;
+      error("Cannot reconfigure Catalyst after it has been initialized\n");
+      return -1;
     }
-    if(VTKGrid)
-    {
-      VTKGrid->Delete();
-      VTKGrid = NULL;
-    }
+
+    ExportCellData = exportCellData;
+    CatalystScripts.clear();
+    return 0;
   }
 
-  void CoProcess(Solver& solver, double time,
-                 unsigned int timeStep, bool lastTimeStep)
+  int AddScript(const char* script)
   {
-    debug2("Running Catalyst update procedure\n");
-    vtkNew<vtkCPDataDescription> dataDescription;
-    dataDescription->AddInput("input");
-    dataDescription->SetTimeData(time, timeStep);
-    if(lastTimeStep == true)
-      {
-      // assume that we want to all the pipelines to execute if it
-      // is the last time step.
-      dataDescription->ForceOutputOn();
-      debug2("Last iteration in Catalyst\n");
-      }
-    if(Processor->RequestDataDescription(dataDescription.GetPointer()) != 0)
-      {
-      debug2("Data requested by Catalyst\n");
-      BuildVTKDataStructures(solver);
-      dataDescription->GetInputDescriptionByName("input")->SetGrid(VTKGrid);
+    if (CatalystInitialized)
+    {
+      error("Cannot add Catalyst script after initialization: %s\n", script);
+      return -1;
+    }
 
-
-      dataDescription->GetInputDescriptionByName("input")->SetWholeExtent(wholeExtent);
-      debug2("Running Catalyst CoProcessing\n");
-      Processor->CoProcess(dataDescription.GetPointer());
-      }
-      
+    notice("Adding Catalyst 2 script: %s\n", script);
+    CatalystScripts.push_back(script);
+    return 0;
   }
-} // end of Catalyst namespace
+
+  int Finalize()
+  {
+    if (!CatalystInitialized)
+      return 0;
+
+    conduit_cpp::Node params;
+    const int result = CheckCatalystStatus(
+      catalyst_finalize(conduit_cpp::c_node(&params)), "finalize");
+    CatalystInitialized = false;
+    CatalystScripts.clear();
+    return result;
+  }
+
+  int CoProcess(Solver& solver, double time,
+                unsigned int timeStep, bool lastTimeStep)
+  {
+    (void)lastTimeStep;
+    if (EnsureCatalystInitialized() != 0)
+      return -1;
+
+    conduit_cpp::Node execParams;
+    auto state = execParams["catalyst/state"];
+    state["timestep"].set(static_cast<std::int64_t>(timeStep));
+    state["cycle"].set(static_cast<std::int64_t>(timeStep));
+    state["time"].set(time);
+
+    auto channel = execParams["catalyst/channels/input"];
+    channel["type"].set("mesh");
+
+    CatalystMeshBuffers buffers;
+    auto mesh = channel["data"];
+    BuildCatalystMesh(solver, mesh, buffers);
+
+    return CheckCatalystStatus(
+      catalyst_execute(conduit_cpp::c_node(&execParams)), "execute");
+  }
+}

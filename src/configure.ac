@@ -79,7 +79,7 @@ AC_ARG_ENABLE([rinside],
 
 AC_ARG_WITH([catalyst],
 	AS_HELP_STRING([--with-catalyst=path],
-		[specify the full path to your paraview source and build]))
+		[specify the prefix of a Catalyst 2 SDK installation]))
 
 AC_ARG_WITH([lammps],
 	AS_HELP_STRING([--with-lammps=path],
@@ -583,71 +583,36 @@ fi
 
 if test "x${with_catalyst}" != "x"
 then
-	SV_LDFLAGS="${LDFLAGS}"
-	SV_CPPFLAGS="${CPPFLAGS}"
-	
 	if ! test -d "${with_catalyst}"
 	then
 		AC_MSG_ERROR([Catalyst path ${with_catalyst} is not a directory])
 	fi
-	
-	AC_MSG_CHECKING([for Catalyst-enabled ParaView build directory])
-	RET=$(find ${with_catalyst} -name "libvtkPVCatalyst-*.so" -print -quit 2>/dev/null)
+
+	AC_MSG_CHECKING([for Catalyst 2 C++ headers])
+	RET=$(find "${with_catalyst}" -path "*/include/catalyst-2.0/catalyst.hpp" -print -quit 2>/dev/null)
 	if test -z "${RET}"
 	then
 		AC_MSG_RESULT([not found])		
-		AC_MSG_ERROR([Didn't find Catalyst libs in path ${with_catalyst}])
+		AC_MSG_ERROR([Didn't find include/catalyst-2.0/catalyst.hpp in ${with_catalyst}])
 	fi
-	PV_VERSION=$(echo ${RET} | sed 's/^.*libvtkPVCatalyst-\(.*\).so$/\1/')
-	RET=$(AS_DIRNAME([${RET}]))
-	AC_MSG_RESULT([${RET}])		
-	if ! test -d ${RET}
+	CATALYST_INCLUDE=$(dirname "${RET}")
+	AC_MSG_RESULT([${CATALYST_INCLUDE}])
+	if ! test -f "${CATALYST_INCLUDE}/catalyst.h"
 	then
-		AC_MSG_ERROR([Lib directory is not a directory - find the developer of this package and discreetly pass him this codeword: Arszenik])
+		AC_MSG_ERROR([Didn't find catalyst.h beside catalyst.hpp in ${CATALYST_INCLUDE}])
 	fi
-	PV_BUILD=${RET}
-	AC_MSG_CHECKING([for Catalyst-enabled ParaView version])
-	if test -z "${PV_VERSION}"
+
+	AC_MSG_CHECKING([for Catalyst 2 library])
+	RET=$(find "${with_catalyst}" \( -name "libcatalyst.so" -o -name "libcatalyst.dylib" -o -name "libcatalyst.a" \) -print -quit 2>/dev/null)
+	if test -z "${RET}"
 	then
 		AC_MSG_RESULT([not found])
-		AC_MSG_ERROR([Library didn't have version suffix in ${with_catalyst} (ask the developer, what the hell I'm talking about)])
+		AC_MSG_ERROR([Didn't find libcatalyst in ${with_catalyst}])
 	fi
-	AC_MSG_RESULT([${PV_VERSION}])
-
-	AC_MSG_CHECKING([for Catalyst-enabled ParaView build include directory])
-	RET=$(find ${with_catalyst} -name "vtkCommonDataModelModule.h" -print -quit 2>/dev/null)
-	if test -z "${RET}"
-	then
-		AC_MSG_RESULT([not found])		
-		AC_MSG_ERROR([Didn't find VTK includes in path ${with_catalyst}])
-	fi
-	RET=$(AS_DIRNAME([${RET}]))
-	RET=$(echo ${RET} | sed 's/\/VTK\/Common\/DataModel$//')
-	AC_MSG_RESULT([${RET}])		
-	if ! test -d ${RET}
-	then
-		AC_MSG_ERROR([include directory is not a directory - find the developer of this package and discreetly pass him this codeword: Arszenik])
-	fi
-	PV_BUILD_INC=${RET}
-
-	AC_MSG_CHECKING([for Catalyst-enabled ParaView source directory])
-	RET=$(find ${with_catalyst} -name "vtkCPProcessor.h" -print -quit 2>/dev/null)
-	if test -z "${RET}"
-	then
-		AC_MSG_RESULT([not found])		
-		AC_MSG_ERROR([Didn't find Catalyst headers in path ${with_catalyst}])
-	fi
-	RET=$(AS_DIRNAME([${RET}]))
-	RET=$(echo ${RET} | sed 's/\/CoProcessing\/Catalyst$//')
-	AC_MSG_RESULT([${RET}])		
-	if ! test -d ${RET}
-	then
-		AC_MSG_ERROR([Header directory is not a directory - find the developer of this package and discreetly pass him this codeword: Arszenik])
-	fi
-	PV_SOURCE=${RET}
+	CATALYST_LIB=$(dirname "${RET}")
+	AC_MSG_RESULT([${CATALYST_LIB}])
 	
 	WITH_CATALYST=1
-	
 fi
 
 if test "x${with_lammps}" != "x"
@@ -944,16 +909,14 @@ AC_MSG_RESULT([NVFLAGS  : $NVFLAGS])
 AC_SUBST(CP)
 AC_SUBST(NVFLAGS)
 AC_SUBST(CROSS_CPU)
-AC_SUBST(PV_BUILD)
-AC_SUBST(PV_BUILD_INC)
-AC_SUBST(PV_SOURCE)
+AC_SUBST(CATALYST_INCLUDE)
+AC_SUBST(CATALYST_LIB)
 AC_SUBST(CROSS_CPU)
 AC_SUBST(CROSS_HIP)
 AC_SUBST(WITH_CATALYST)
 AC_SUBST(WITH_LAMMPS)
 AC_SUBST(WITH_R)
 AC_SUBST(TAPENADE)
-AC_SUBST(PV_VERSION)
 AC_SUBST(RTOPT)
 AC_SUBST(X_BLOCK)
 AC_SUBST(WARPSIZE)
