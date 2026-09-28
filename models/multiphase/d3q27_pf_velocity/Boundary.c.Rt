@@ -767,6 +767,38 @@ CudaDeviceFunction void calcPhaseGradCloseToBoundary(){
 CudaDeviceFunction void calcWallPhase_correction() {
     PhaseF = PhaseF(0,0,0);
     if (IsSpecialBoundaryPoint == <?%s NORMAL_POINTING_INTO_SOLID_ON_NEXT_NODE ?> ) {
+        // Calculate the closest discrete direction for normal, that is not solid
+        real_t tmp = 0.0;
+        int maxi = 0;
+        real_t maxn=0.0, dot;
+
+        for (int i = 0; i<27; i++) {
+        tmp = nw_x*nw_x + nw_y*nw_y + nw_z*nw_z;
+        real_t dot = (nw_x*d3q27_ex[i] + nw_y*d3q27_ey[i] + nw_z*d3q27_ez[i]) /
+                sqrt( tmp*(d3q27_ex[i]*d3q27_ex[i] + d3q27_ey[i]*d3q27_ey[i] +
+                    d3q27_ez[i]*d3q27_ez[i]) + 1e-12);
+
+
+        bool is_liquid = (!IsBoundary_dyn(nw_x, nw_y, nw_z) && PhaseF_dyn(nw_x, nw_y, nw_z) > -0.5);
+        if (dot > maxn && is_liquid) {
+                maxn = dot; maxi = i;
+            }
+        }
+
+
+        if (maxi != 0) {
+            real_t nw_x_tmp = d3q27_ex[maxi];
+            real_t nw_y_tmp = d3q27_ey[maxi];
+            real_t nw_z_tmp = d3q27_ez[maxi];
+
+            real_t pf_f = PhaseF_dyn(int(nw_x_tmp), int(nw_y_tmp), int(nw_z_tmp));
+
+            // set similarly as before
+
+            real_t h = 0.5 * sqrt(nw_x_tmp*nw_x_tmp + nw_y_tmp*nw_y_tmp + nw_z_tmp*nw_z_tmp);
+            real_t a = -h * (4.0/IntWidth) * cos( radAngle );
+            PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
+        } else {
         // We could take the phase field calculated already from the node in front
         // (solid in the direction of solid normal)
         // if it is already has the phase field value calculated (from the BC application)
@@ -790,7 +822,8 @@ CudaDeviceFunction void calcWallPhase_correction() {
         }
         // print sum and average and count
         PhaseF = count == 0 ? 1 : fluid_average / denom;
-    }
+     }
+  }
 }
 
 
