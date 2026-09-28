@@ -779,7 +779,8 @@ CudaDeviceFunction void calcWallPhase_correction() {
                     d3q27_ez[i]*d3q27_ez[i]) + 1e-12);
 
 
-        bool is_liquid = (!IsBoundary_dyn(nw_x, nw_y, nw_z) && PhaseF_dyn(nw_x, nw_y, nw_z) > -0.5);
+        bool is_liquid = (!IsBoundary_dyn(d3q27_ex[i], d3q27_ey[i], d3q27_ez[i]) &&
+                          PhaseF_dyn(d3q27_ex[i], d3q27_ey[i], d3q27_ez[i]) > -0.5);
         if (dot > maxn && is_liquid) {
                 maxn = dot; maxi = i;
             }
@@ -796,8 +797,12 @@ CudaDeviceFunction void calcWallPhase_correction() {
             // set similarly as before
 
             real_t h = 0.5 * sqrt(nw_x_tmp*nw_x_tmp + nw_y_tmp*nw_y_tmp + nw_z_tmp*nw_z_tmp);
-            real_t a = -h * (4.0/IntWidth) * cos( radAngle );
-            PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
+            if (fabs(radAngle - PI/2.0) < 1e-4) {
+                PhaseF = pf_f;
+            } else {
+                real_t a = -h * (4.0/IntWidth) * cos( radAngle );
+                PhaseF = (1 + a - sqrt( (1+a)*(1+a) - 4*a*pf_f))/(a+1e-12) - pf_f;
+            }
         } else {
         // We could take the phase field calculated already from the node in front
         // (solid in the direction of solid normal)
