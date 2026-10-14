@@ -150,7 +150,18 @@ CudaDeviceFunction void <?%s paste0(C(my_pressure_boundaries[ii]), pressure_boun
     sel = as.vector( (U_PF %*% n) < 0)
 
     nh = h
-    nh[sel] = heq[sel] + (h-heq)[bounce][sel]
+    if (type_h == "fpf") {
+        # bounce the non-equilibrium part around the imposed phase field, so the unknown PF
+        # multiplies only the incoming equilibria (sum ~ sum(w) > 0) instead of the
+        # odd part feq_i - feq_bounce (sum ~ 6 u_n sum(w)), which is singular when u_n -> 0
+        heq_bounce = desired_pf * EQ_h$feq
+    } else {
+        heq_bounce = heq
+    }
+    nh[sel] = heq[sel] + (h - heq_bounce)[bounce][sel]
+    # NOTE: Would lead to blow-up of the phase field when the inlet velocity close
+    # to zero
+    # nh[sel] = heq[sel] + (h-heq)[bounce][sel]
 
     # write down the closure equation
     # sum of phase-field densities equal to phase-field value (desired or imposed)
