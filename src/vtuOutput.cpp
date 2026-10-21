@@ -1,4 +1,5 @@
 #include "vtuOutput.h"
+#include <stdexcept>
 
 #include "mpitools.hpp"
 

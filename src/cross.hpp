@@ -4,12 +4,18 @@
 
 #ifndef CROSS_CPU
 
+  #if CUDART_VERSION >= 11000
+      #include <cooperative_groups.h>
+      #include <cooperative_groups/reduce.h>
+  #endif
+
   __shared__ real_t  sumtab[MAX_THREADS];
   __shared__ real_t* sumptr[MAX_THREADS];
 
   #if __CUDA_ARCH__ < 600
     #define CROSS_NEED_ATOMICADD_DOUBLE
   #endif
+
 
   #if __CUDA_ARCH__ >= 700 && CUDART_VERSION >= 11000
     #define CROSS_COOP_GROUPS
